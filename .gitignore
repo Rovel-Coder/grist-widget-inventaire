@@ -1,11 +1,21 @@
-﻿# Fichiers système
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+node_modules/
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# OS
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# Éditeurs
-.vscode/
-.idea/
-
-# Node modules (si vous en ajoutez plus tard)
-node_modules/

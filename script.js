@@ -29,26 +29,25 @@ grist.ready({
       title: "Validation",
       description: "Colonne indiquant si la pièce est validée",
       optional: true,
-      type: "Bool"
+      type: "Choice"
     },
     {
       name: "categorieColonne",
       title: "Catégorie",
       description: "Colonne contenant la catégorie du fichier",
       optional: true,
-      type: "Choice"
+      type: "Ref"
     }
   ]
 });
 
 let allData = []; 
 let widgetConfig = {
-  nomColonne: "Nom du fichier",
-  descriptionColonne: "Description du fichier",
+  nomColonne: "Nom_Fichier",
+  descriptionColonne: "Description",
   auteurColonne: "Auteur",
-  validationColonne: "Pièce Validée ?",
-  categorieColonne: "Categorie",
-  targetTable: "Inventaire"
+  validationColonne: "Piece_Validee_",
+  categorieColonne: "Categorie"
 };
 
 // 🎨 Écouteur pour les changements de configuration
@@ -63,8 +62,7 @@ grist.onOptions(function(options, interaction) {
       descriptionColonne: interaction.mappings.descriptionColonne || widgetConfig.descriptionColonne,
       auteurColonne: interaction.mappings.auteurColonne || widgetConfig.auteurColonne,
       validationColonne: interaction.mappings.validationColonne || widgetConfig.validationColonne,
-      categorieColonne: interaction.mappings.categorieColonne || widgetConfig.categorieColonne,
-      targetTable: options?.targetTable || widgetConfig.targetTable
+      categorieColonne: interaction.mappings.categorieColonne || widgetConfig.categorieColonne
     };
     console.log("✅ Config appliquée:", widgetConfig);
     
@@ -84,11 +82,21 @@ function parseGristData(data) {
       const f = {}; 
       keys.forEach(k => f[k] = data[k][index]);
       
+      // Extraire la valeur de catégorie (Ref ou texte direct)
+      let categorieText = "";
+      const categorieValue = f[widgetConfig.categorieColonne];
+      if (categorieValue && typeof categorieValue === 'object' && categorieValue.length > 0) {
+        // Si c'est un tableau Ref, prendre le premier élément
+        categorieText = categorieValue[0]?.toString() || "";
+      } else {
+        categorieText = (categorieValue || "").toString();
+      }
+      
       // Utiliser la configuration pour la recherche
       const recherche = [
         (f[widgetConfig.nomColonne] || "").toString(),
         (f[widgetConfig.auteurColonne] || "").toString(),
-        (f[widgetConfig.categorieColonne] || "").toString()
+        categorieText
       ].join(' ').toLowerCase();
       
       return { id, fields: f, searchString: recherche };
@@ -99,20 +107,20 @@ function parseGristData(data) {
 
 async function loadData() {
   const container = document.getElementById('results');
-  container.innerHTML = `<div class="status-msg">🔄 Chargement table "${widgetConfig.targetTable}"...</div>`;
+  container.innerHTML = `<div class="status-msg">🔄 Chargement des données...</div>`;
   try {
     grist.setSelectedRows([]);
-    const rawData = await grist.docApi.fetchTable(widgetConfig.targetTable);
+    const rawData = await grist.docApi.fetchTable();
     allData = parseGristData(rawData);
     console.log(`✅ ${allData.length} pièces chargées`);
     if (allData.length) console.log("📋 Premier élément:", allData[0]);
     container.innerHTML = allData.length ? 
       `<div class="status-msg">✅ ${allData.length} pièces prêtes ! Tapez % ou recherchez</div>` :
-      `<div class="status-msg">⚠️ Table "${widgetConfig.targetTable}" vide ou inaccessible</div>`;
+      `<div class="status-msg">⚠️ Table vide ou inaccessible</div>`;
   } catch(e) {
     console.error("💥 Erreur:", e);
     container.innerHTML = `<div class="status-msg" style="color:#ef4444;background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);">
-      ❌ Erreur: ${e.message}<br><small>F12 Console → 🔑 Vérifiez colonnes/nom table</small></div>`;
+      ❌ Erreur: ${e.message}<br><small>F12 Console → 🔑 Vérifiez colonnes mappées</small></div>`;
   }
 }
 
@@ -139,8 +147,10 @@ function renderResults(list, query = "") {
       const nom = f[widgetConfig.nomColonne] || "Sans nom";
       const desc = (f[widgetConfig.descriptionColonne] || "").toString().substring(0, 140);
       const auteur = f[widgetConfig.auteurColonne] || "Anonyme";
-      const valide = f[widgetConfig.validationColonne] || false;
+      const valideRaw = f[widgetConfig.validationColonne] || "";
       
+      // Gérer le Choice "Validé Institution" / "Non Validé Institution"
+      const valide = valideRaw.toString().includes("Validé");
       const statusClass = valide ? 'valid' : 'draft';
       const statusText = valide ? '✓ Validée' : '⚠ Brouillon';
 
