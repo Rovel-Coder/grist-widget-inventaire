@@ -43,32 +43,33 @@ grist.ready({
 
 let allData = []; 
 let widgetConfig = {
-  nomColonne: "Nom_Fichier",
-  descriptionColonne: "Description",
-  auteurColonne: "Auteur",
-  validationColonne: "Piece_Validee_",
-  categorieColonne: "Categorie"
+  nomColonne: null,
+  descriptionColonne: null,
+  auteurColonne: null,
+  validationColonne: null,
+  categorieColonne: null
 };
 
 // 🎨 Écouteur pour les changements de configuration
 grist.onOptions(function(options, interaction) {
-  console.log("⚙️ Configuration reçue:", options);
-  console.log("📋 Mappings:", interaction.mappings);
+  console.log("⚙️ Options reçues:", options);
+  console.log("📋 Mappings reçus:", interaction);
   
-  if (interaction.mappings) {
-    // Appliquer les mappings de colonnes
-    widgetConfig = {
-      nomColonne: interaction.mappings.nomColonne || widgetConfig.nomColonne,
-      descriptionColonne: interaction.mappings.descriptionColonne || widgetConfig.descriptionColonne,
-      auteurColonne: interaction.mappings.auteurColonne || widgetConfig.auteurColonne,
-      validationColonne: interaction.mappings.validationColonne || widgetConfig.validationColonne,
-      categorieColonne: interaction.mappings.categorieColonne || widgetConfig.categorieColonne
-    };
-    console.log("✅ Config appliquée:", widgetConfig);
-    
-    // Recharger les données avec la nouvelle config
-    loadData();
-  }
+  // Les mappings contiennent les noms de colonnes choisis par l'utilisateur
+  const mappings = interaction || {};
+  
+  widgetConfig = {
+    nomColonne: mappings.nomColonne || null,
+    descriptionColonne: mappings.descriptionColonne || null,
+    auteurColonne: mappings.auteurColonne || null,
+    validationColonne: mappings.validationColonne || null,
+    categorieColonne: mappings.categorieColonne || null
+  };
+  
+  console.log("✅ Config appliquée:", widgetConfig);
+  
+  // Recharger les données avec la nouvelle config
+  loadData();
 });
 
 function parseGristData(data) {
@@ -78,24 +79,27 @@ function parseGristData(data) {
     const ids = data.id || []; 
     const keys = Object.keys(data).filter(k => k !== 'id');
     console.log("🔑 Colonnes détectées:", keys);
+    console.log("🎯 Config actuelle:", widgetConfig);
+    
     return ids.map((id, index) => {
       const f = {}; 
       keys.forEach(k => f[k] = data[k][index]);
       
       // Extraire la valeur de catégorie (Ref ou texte direct)
       let categorieText = "";
-      const categorieValue = f[widgetConfig.categorieColonne];
-      if (categorieValue && typeof categorieValue === 'object' && categorieValue.length > 0) {
-        // Si c'est un tableau Ref, prendre le premier élément
-        categorieText = categorieValue[0]?.toString() || "";
-      } else {
-        categorieText = (categorieValue || "").toString();
+      if (widgetConfig.categorieColonne) {
+        const categorieValue = f[widgetConfig.categorieColonne];
+        if (categorieValue && typeof categorieValue === 'object' && categorieValue.length > 0) {
+          categorieText = categorieValue[0]?.toString() || "";
+        } else {
+          categorieText = (categorieValue || "").toString();
+        }
       }
       
       // Utiliser la configuration pour la recherche
       const recherche = [
-        (f[widgetConfig.nomColonne] || "").toString(),
-        (f[widgetConfig.auteurColonne] || "").toString(),
+        widgetConfig.nomColonne ? (f[widgetConfig.nomColonne] || "").toString() : "",
+        widgetConfig.auteurColonne ? (f[widgetConfig.auteurColonne] || "").toString() : "",
         categorieText
       ].join(' ').toLowerCase();
       
@@ -107,6 +111,13 @@ function parseGristData(data) {
 
 async function loadData() {
   const container = document.getElementById('results');
+  
+  // Vérifier qu'au moins la colonne nom est configurée
+  if (!widgetConfig.nomColonne) {
+    container.innerHTML = `<div class="status-msg">⚙️ Configurez au moins la colonne "Nom du fichier" dans le panneau de droite</div>`;
+    return;
+  }
+  
   container.innerHTML = `<div class="status-msg">🔄 Chargement des données...</div>`;
   try {
     grist.setSelectedRows([]);
@@ -144,10 +155,10 @@ function renderResults(list, query = "") {
       const f = item.fields;
       
       // Utiliser la configuration pour extraire les valeurs
-      const nom = f[widgetConfig.nomColonne] || "Sans nom";
-      const desc = (f[widgetConfig.descriptionColonne] || "").toString().substring(0, 140);
-      const auteur = f[widgetConfig.auteurColonne] || "Anonyme";
-      const valideRaw = f[widgetConfig.validationColonne] || "";
+      const nom = widgetConfig.nomColonne ? (f[widgetConfig.nomColonne] || "Sans nom") : "Sans nom";
+      const desc = widgetConfig.descriptionColonne ? (f[widgetConfig.descriptionColonne] || "").toString().substring(0, 140) : "";
+      const auteur = widgetConfig.auteurColonne ? (f[widgetConfig.auteurColonne] || "Anonyme") : "Anonyme";
+      const valideRaw = widgetConfig.validationColonne ? (f[widgetConfig.validationColonne] || "") : "";
       
       // Gérer le Choice "Validé Institution" / "Non Validé Institution"
       const valide = valideRaw.toString().includes("Validé");
@@ -182,5 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (q.length >= 3) renderResults(allData.filter(i => i.searchString.includes(q)), q);
     else { renderResults([], q); grist.setSelectedRows([]); }
   });
-  loadData();
+  
+  // Ne pas charger automatiquement, attendre la config
+  const container = document.getElementById('results');
+  container.innerHTML = `<div class="status-msg">⚙️ Configurez les colonnes dans le panneau de droite →</div>`;
 });
