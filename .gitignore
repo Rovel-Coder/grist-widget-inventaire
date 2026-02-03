@@ -1,0 +1,11 @@
+﻿# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs
+.vscode/
+.idea/
+
+# Node modules (si vous en ajoutez plus tard)
+node_modules/
