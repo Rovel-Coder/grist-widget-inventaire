@@ -1,4 +1,46 @@
-grist.ready({ requiredAccess: 'full', allowSelectBy: true });
+// 🎯 Déclaration des colonnes configurables
+grist.ready({ 
+  requiredAccess: 'full', 
+  allowSelectBy: true,
+  columns: [
+    {
+      name: "nomColonne",
+      title: "Nom du fichier",
+      description: "Colonne contenant le nom du fichier",
+      optional: false,
+      type: "Text"
+    },
+    {
+      name: "descriptionColonne",
+      title: "Description",
+      description: "Colonne contenant la description du fichier",
+      optional: true,
+      type: "Text"
+    },
+    {
+      name: "auteurColonne",
+      title: "Auteur",
+      description: "Colonne contenant l'auteur du fichier",
+      optional: true,
+      type: "Text"
+    },
+    {
+      name: "validationColonne",
+      title: "Validation",
+      description: "Colonne indiquant si la pièce est validée",
+      optional: true,
+      type: "Bool"
+    },
+    {
+      name: "categorieColonne",
+      title: "Catégorie",
+      description: "Colonne contenant la catégorie du fichier",
+      optional: true,
+      type: "Choice"
+    }
+  ]
+});
+
 let allData = []; 
 let widgetConfig = {
   nomColonne: "Nom du fichier",
@@ -12,22 +54,22 @@ let widgetConfig = {
 // 🎨 Écouteur pour les changements de configuration
 grist.onOptions(function(options, interaction) {
   console.log("⚙️ Configuration reçue:", options);
-  if (options) {
-    // Appliquer les options personnalisées
+  console.log("📋 Mappings:", interaction.mappings);
+  
+  if (interaction.mappings) {
+    // Appliquer les mappings de colonnes
     widgetConfig = {
-      nomColonne: options.nomColonne || "Nom du fichier",
-      descriptionColonne: options.descriptionColonne || "Description du fichier",
-      auteurColonne: options.auteurColonne || "Auteur",
-      validationColonne: options.validationColonne || "Pièce Validée ?",
-      categorieColonne: options.categorieColonne || "Categorie",
-      targetTable: options.targetTable || "Inventaire"
+      nomColonne: interaction.mappings.nomColonne || widgetConfig.nomColonne,
+      descriptionColonne: interaction.mappings.descriptionColonne || widgetConfig.descriptionColonne,
+      auteurColonne: interaction.mappings.auteurColonne || widgetConfig.auteurColonne,
+      validationColonne: interaction.mappings.validationColonne || widgetConfig.validationColonne,
+      categorieColonne: interaction.mappings.categorieColonne || widgetConfig.categorieColonne,
+      targetTable: options?.targetTable || widgetConfig.targetTable
     };
     console.log("✅ Config appliquée:", widgetConfig);
     
     // Recharger les données avec la nouvelle config
-    if (allData.length > 0 || options.targetTable !== widgetConfig.targetTable) {
-      loadData();
-    }
+    loadData();
   }
 });
 
@@ -132,4 +174,3 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   loadData();
 });
-
