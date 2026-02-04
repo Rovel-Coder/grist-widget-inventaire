@@ -13,10 +13,14 @@
       --shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.25);
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+    }
 
     body {
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       padding: 20px;
@@ -37,12 +41,35 @@
       box-shadow: var(--shadow-light);
     }
 
+    .search-header {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 12px;
+    }
+
+    .search-header h2 {
+      color: white;
+      font-size: 20px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .results-count {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
     .search-box input {
       width: 100%;
-      padding: 12px 20px;
+      padding: 14px 20px;
       border: 2px solid rgba(255, 255, 255, 0.3);
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.95);
       font-size: 16px;
       transition: all 0.3s;
     }
@@ -50,12 +77,17 @@
     .search-box input:focus {
       outline: none;
       border-color: #fff;
+      background: white;
       box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
+    }
+
+    .search-box input::placeholder {
+      color: #95a5a6;
     }
 
     #results {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap: 20px;
     }
 
@@ -64,26 +96,34 @@
       border-radius: 16px;
       overflow: hidden;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: var(--shadow-light);
+      border: 1px solid rgba(255, 255, 255, 0.5);
     }
 
     .card:hover {
-      transform: translateY(-5px);
+      transform: translateY(-8px) scale(1.02);
       box-shadow: var(--shadow-hover);
+      background: white;
     }
 
     .card-image {
       width: 100%;
-      height: 200px;
+      height: 220px;
       overflow: hidden;
-      background: #f0f0f0;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      position: relative;
     }
 
     .card-image img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transition: transform 0.3s;
+    }
+
+    .card:hover .card-image img {
+      transform: scale(1.1);
     }
 
     .card-content {
@@ -94,13 +134,20 @@
       font-size: 18px;
       font-weight: 600;
       color: #2c3e50;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
     }
 
     .field-row {
       display: flex;
       margin-bottom: 8px;
       font-size: 14px;
+      line-height: 1.5;
     }
 
     .field-label {
@@ -108,11 +155,63 @@
       color: #7f8c8d;
       margin-right: 8px;
       text-transform: capitalize;
+      min-width: 100px;
+      flex-shrink: 0;
     }
 
     .field-value {
-      color: #2c3e50;
+      color: #34495e;
       flex: 1;
+      word-break: break-word;
+    }
+
+    /* États vides */
+    .empty-state {
+      padding: 60px 20px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 16px;
+      grid-column: 1/-1;
+    }
+
+    .empty-state-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      opacity: 0.5;
+    }
+
+    .empty-state-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 8px;
+    }
+
+    .empty-state-text {
+      font-size: 16px;
+      color: #7f8c8d;
+      line-height: 1.6;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      body {
+        padding: 12px;
+      }
+
+      #results {
+        grid-template-columns: 1fr;
+        gap: 15px;
+      }
+
+      .search-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .field-label {
+        min-width: auto;
+      }
     }
   </style>
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
@@ -120,11 +219,26 @@
 <body>
   <div class="container">
     <div class="search-box">
-      <input type="text" id="search" placeholder="🔍 Rechercher..." oninput="search()">
+      <div class="search-header">
+        <h2>🔍 Recherche</h2>
+        <div class="results-count" id="results-count">0 résultat</div>
+      </div>
+      <input 
+        type="text" 
+        id="search" 
+        placeholder="Rechercher dans vos données..." 
+        oninput="search()"
+        autocomplete="off"
+      >
     </div>
-    <div id="results"></div>
+    <div id="results">
+      <div class="empty-state">
+        <div class="empty-state-icon">⏳</div>
+        <div class="empty-state-title">Chargement...</div>
+        <div class="empty-state-text">Veuillez patienter</div>
+      </div>
+    </div>
   </div>
   <script src="script.js"></script>
 </body>
 </html>
-
