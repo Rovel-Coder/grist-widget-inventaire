@@ -4,7 +4,8 @@ let filteredData = [];
 let currentMappings = null;
 let isConfigured = false;
 let searchTerm = '';
-let statusColors = {}; // Stockage des couleurs de statut
+let statusColors = {};
+let allColumns = {}; // Stockage de TOUTES les colonnes
 
 // 📋 Initialisation du widget avec configuration des colonnes
 grist.ready({
@@ -61,6 +62,13 @@ grist.ready({
             description: "Auteur ou créateur"
         },
         {
+            name: "attachments",
+            title: "Pièces jointes",
+            type: "Attachments",
+            optional: true,
+            description: "Fichiers à télécharger"
+        },
+        {
             name: "additionalFields",
             title: "Champs supplémentaires",
             type: "Any",
@@ -79,7 +87,6 @@ grist.onRecords(async function(records, mappings) {
 
         currentMappings = mappings;
 
-        // Vérifier si la colonne obligatoire est configurée
         if (!mappings || !mappings.title) {
             isConfigured = false;
             showConfigurationMessage();
@@ -88,14 +95,14 @@ grist.onRecords(async function(records, mappings) {
 
         isConfigured = true;
 
-        // Récupérer les métadonnées de la table pour obtenir les couleurs
         await fetchStatusColors(mappings);
 
-        // Récupérer les données de la table complète
         const tableData = await grist.fetchSelectedTable();
         console.log('📋 Données table complète:', tableData);
 
-        // Mapper les colonnes
+        // Stocker TOUTES les colonnes pour le modal
+        allColumns = tableData;
+
         const mappedData = grist.mapColumnNames(tableData, {
             mappings: mappings
         });
@@ -104,8 +111,6 @@ grist.onRecords(async function(records, mappings) {
 
         if (mappedData && mappedData.id && mappedData.id.length > 0) {
             allData = mappedData;
-
-            // Afficher le message de recherche au lieu des cartes
             showSearchPrompt();
         } else {
             allData = [];
@@ -125,28 +130,20 @@ async function fetchStatusColors(mappings) {
             return;
         }
 
-        // Récupérer les métadonnées des colonnes
         const tables = await grist.docApi.fetchTable('_grist_Tables_column');
         const statusColumnName = mappings.status;
 
-        console.log('🔍 Recherche de la colonne:', statusColumnName);
-        console.log('📋 Tables disponibles:', tables);
-
-        // Trouver la colonne de statut
         const statusColumn = tables.colId.findIndex((colId, idx) => {
             return tables.label && tables.label[idx] === statusColumnName;
         });
 
         if (statusColumn !== -1 && tables.widgetOptions && tables.widgetOptions[statusColumn]) {
             const widgetOptions = tables.widgetOptions[statusColumn];
-            console.log('⚙️ Widget options:', widgetOptions);
 
-            // Parser les options si c'est une chaîne JSON
             if (typeof widgetOptions === 'string') {
                 try {
                     const options = JSON.parse(widgetOptions);
                     if (options.choices) {
-                        // Extraire les couleurs des choix
                         statusColors = {};
                         options.choices.forEach(choice => {
                             if (typeof choice === 'object' && choice.value) {
@@ -176,11 +173,9 @@ const searchBar = document.getElementById('searchBar');
 searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value.toLowerCase().trim();
 
-    // Si on commence à taper, afficher les résultats
     if (searchTerm.length > 0) {
         applySearch();
     } else {
-        // Si on efface tout, revenir au message de recherche
         showSearchPrompt();
     }
 });
@@ -196,7 +191,6 @@ function applySearch() {
         return;
     }
 
-    // Filtrer les données
     const filtered = {
         id: [],
         title: [],
@@ -206,11 +200,11 @@ function applySearch() {
         category: [],
         status: [],
         author: [],
+        attachments: [],
         additionalFields: []
     };
 
     allData.id.forEach((id, index) => {
-        // Recherche dans tous les champs textuels
         const searchableText = [
             allData.title?.[index],
             allData.description?.[index],
@@ -228,6 +222,7 @@ function applySearch() {
             if (allData.category) filtered.category.push(allData.category[index]);
             if (allData.status) filtered.status.push(allData.status[index]);
             if (allData.author) filtered.author.push(allData.author[index]);
+            if (allData.attachments) filtered.attachments.push(allData.attachments[index]);
             if (allData.additionalFields) filtered.additionalFields.push(allData.additionalFields[index]);
         }
     });
@@ -268,7 +263,6 @@ function renderWidget(data) {
     const container = document.getElementById('results');
     searchBar.classList.remove('hidden');
 
-    // Vérifier si nous avons des données
     if (!data || !data.id || data.id.length === 0) {
         container.innerHTML = '<div class="no-data">😔 Aucun produit ne correspond à votre recherche</div>';
         return;
@@ -276,7 +270,6 @@ function renderWidget(data) {
 
     container.innerHTML = '';
 
-    // Créer une carte pour chaque ligne
     data.id.forEach((id, index) => {
         const card = createCard(data, index, id);
         container.appendChild(card);
@@ -288,26 +281,19 @@ function createCard(data, index, rowId) {
     const card = document.createElement('div');
     card.className = 'card';
 
-    // Titre (obligatoire)
     const title = data.title?.[index] || 'Sans titre';
-
-    // Description
     const description = data.description?.[index] || '';
-
-    // Image
     const imageData = data.image?.[index];
     let imageUrl = null;
+
     if (imageData && Array.isArray(imageData) && imageData.length > 0) {
         imageUrl = typeof imageData[0] === 'string' ? imageData[0] : imageData[0]?.url;
     }
 
-    // Statut avec couleur
     const statusValue = data.status?.[index];
 
-    // Construction du HTML
     let cardHTML = '';
 
-    // Image ou placeholder
     cardHTML += '<div class="card-image-container">';
     if (imageUrl) {
         cardHTML += `<img src="${imageUrl}" alt="${escapeHtml(title)}" class="card-image" onerror="this.parentElement.innerHTML='<div class=\'card-no-image\'>📦</div>'">`;
@@ -317,13 +303,10 @@ function createCard(data, index, rowId) {
     cardHTML += '</div>';
 
     cardHTML += '<div class="card-content">';
-
-    // Header avec titre
     cardHTML += '<div class="card-header">';
     cardHTML += `<h3 class="card-title">${escapeHtml(title)}</h3>`;
     cardHTML += '</div>';
 
-    // Badge de statut avec couleurs
     if (statusValue) {
         const colors = getStatusColors(statusValue);
         cardHTML += `
@@ -333,12 +316,10 @@ function createCard(data, index, rowId) {
         `;
     }
 
-    // Description
     if (description) {
         cardHTML += `<div class="card-description">${escapeHtml(description)}</div>`;
     }
 
-    // Métadonnées avec icônes
     const hasMetadata = data.date?.[index] || data.category?.[index] || data.author?.[index];
 
     if (hasMetadata) {
@@ -383,6 +364,141 @@ function createCard(data, index, rowId) {
         cardHTML += '</div>';
     }
 
+    cardHTML += '</div>';
+    card.innerHTML = cardHTML;
+
+    // Ouvrir le modal au lieu de sélectionner la ligne
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+        openModal(data, index, rowId);
+    });
+
+    return card;
+}
+
+// 🔓 Ouvrir le modal avec les détails
+function openModal(data, index, rowId) {
+    const modal = document.getElementById('modalOverlay');
+    const modalContent = document.getElementById('modalContent');
+
+    const title = data.title?.[index] || 'Sans titre';
+    const description = data.description?.[index] || '';
+    const statusValue = data.status?.[index];
+    const imageData = data.image?.[index];
+    const attachmentsData = data.attachments?.[index];
+
+    let modalHTML = '';
+
+    // Header
+    modalHTML += '<div class="modal-header">';
+    modalHTML += `<h2>${escapeHtml(title)}</h2>`;
+    modalHTML += '<button class="modal-close" onclick="closeModal()">✕</button>';
+    modalHTML += '</div>';
+
+    modalHTML += '<div class="modal-body">';
+
+    // Badge de statut
+    if (statusValue) {
+        const colors = getStatusColors(statusValue);
+        modalHTML += `
+            <div class="modal-status-badge" style="background-color: ${colors.fillColor}; color: ${colors.textColor};">
+                ${escapeHtml(statusValue)}
+            </div>
+        `;
+    }
+
+    // Galerie d'images
+    if (imageData && Array.isArray(imageData) && imageData.length > 0) {
+        modalHTML += '<div class="modal-section">';
+        modalHTML += '<div class="modal-section-title">📸 Images</div>';
+        modalHTML += '<div class="modal-image-gallery">';
+
+        imageData.forEach(img => {
+            const imgUrl = typeof img === 'string' ? img : img?.url;
+            if (imgUrl) {
+                modalHTML += `<img src="${imgUrl}" alt="${escapeHtml(title)}" class="modal-image" onclick="window.open('${imgUrl}', '_blank')">`;
+            }
+        });
+
+        modalHTML += '</div>';
+        modalHTML += '</div>';
+    }
+
+    // Description complète
+    if (description) {
+        modalHTML += '<div class="modal-section">';
+        modalHTML += '<div class="modal-section-title">📝 Description</div>';
+        modalHTML += `<div class="modal-description">${escapeHtml(description)}</div>`;
+        modalHTML += '</div>';
+    }
+
+    // Informations principales
+    const hasInfo = data.date?.[index] || data.category?.[index] || data.author?.[index];
+    if (hasInfo) {
+        modalHTML += '<div class="modal-section">';
+        modalHTML += '<div class="modal-section-title">ℹ️ Informations</div>';
+        modalHTML += '<div class="modal-info-grid">';
+
+        if (data.date?.[index]) {
+            modalHTML += `
+                <div class="modal-info-item">
+                    <div class="modal-info-label">📅 Date</div>
+                    <div class="modal-info-value">${formatDate(data.date[index])}</div>
+                </div>
+            `;
+        }
+
+        if (data.category?.[index]) {
+            modalHTML += `
+                <div class="modal-info-item">
+                    <div class="modal-info-label">🏷️ Catégorie</div>
+                    <div class="modal-info-value">${escapeHtml(String(data.category[index]))}</div>
+                </div>
+            `;
+        }
+
+        if (data.author?.[index]) {
+            modalHTML += `
+                <div class="modal-info-item">
+                    <div class="modal-info-label">👤 Auteur</div>
+                    <div class="modal-info-value">${escapeHtml(String(data.author[index]))}</div>
+                </div>
+            `;
+        }
+
+        modalHTML += '</div>';
+        modalHTML += '</div>';
+    }
+
+    // Pièces jointes
+    if (attachmentsData && Array.isArray(attachmentsData) && attachmentsData.length > 0) {
+        modalHTML += '<div class="modal-section">';
+        modalHTML += '<div class="modal-section-title">📎 Pièces jointes</div>';
+        modalHTML += '<div class="modal-attachments">';
+
+        attachmentsData.forEach(attachment => {
+            const attUrl = typeof attachment === 'string' ? attachment : attachment?.url;
+            const attName = attachment?.filename || attachment?.name || 'Fichier';
+            const attSize = attachment?.size ? formatFileSize(attachment.size) : '';
+
+            if (attUrl) {
+                modalHTML += `
+                    <a href="${attUrl}" target="_blank" class="attachment-item">
+                        <div class="attachment-icon">📄</div>
+                        <div class="attachment-info">
+                            <div class="attachment-name">${escapeHtml(attName)}</div>
+                            ${attSize ? `<div class="attachment-size">${attSize}</div>` : ''}
+                        </div>
+                        <span class="attachment-download">⬇️ Télécharger</span>
+                    </a>
+                `;
+            }
+        });
+
+        modalHTML += '</div>';
+        modalHTML += '</div>';
+    }
+
     // Champs supplémentaires
     if (data.additionalFields) {
         const additionalData = data.additionalFields[index];
@@ -403,36 +519,48 @@ function createCard(data, index, rowId) {
             }
 
             if (fieldsToShow.length > 0) {
-                cardHTML += '<div class="additional-fields">';
-                cardHTML += '<div class="additional-fields-title">Informations complémentaires</div>';
+                modalHTML += '<div class="modal-section">';
+                modalHTML += '<div class="modal-section-title">➕ Informations complémentaires</div>';
+                modalHTML += '<div class="modal-additional-fields">';
                 fieldsToShow.forEach(field => {
-                    cardHTML += `<div class="field-item">${field}</div>`;
+                    modalHTML += `<div class="modal-field-item">${field}</div>`;
                 });
-                cardHTML += '</div>';
+                modalHTML += '</div>';
+                modalHTML += '</div>';
             }
         }
     }
 
-    cardHTML += '</div>';
-    card.innerHTML = cardHTML;
+    modalHTML += '</div>';
 
-    // Permettre la sélection de la ligne dans Grist au clic
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', () => {
-        grist.setCursorPos({rowId: rowId}).catch(err => console.error('Erreur setCursorPos:', err));
-    });
+    modalContent.innerHTML = modalHTML;
+    modal.classList.remove('hidden');
+    setTimeout(() => modal.classList.add('active'), 10);
 
-    return card;
+    // Sélectionner la ligne dans Grist
+    grist.setCursorPos({rowId: rowId}).catch(err => console.error('Erreur setCursorPos:', err));
 }
+
+// 🔒 Fermer le modal
+function closeModal() {
+    const modal = document.getElementById('modalOverlay');
+    modal.classList.remove('active');
+    setTimeout(() => modal.classList.add('hidden'), 300);
+}
+
+// Fermer au clic sur l'overlay
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modalOverlay') {
+        closeModal();
+    }
+});
 
 // 🎨 Obtenir les couleurs du statut
 function getStatusColors(statusValue) {
-    // Si on a récupéré les couleurs depuis Grist
     if (statusColors[statusValue]) {
         return statusColors[statusValue];
     }
 
-    // Couleurs par défaut basées sur des mots-clés courants
     const defaultColors = {
         'validé': { fillColor: '#d4edda', textColor: '#155724' },
         'valide': { fillColor: '#d4edda', textColor: '#155724' },
@@ -454,7 +582,6 @@ function getStatusColors(statusValue) {
         }
     }
 
-    // Couleur par défaut
     return { fillColor: '#e0e0e0', textColor: '#333333' };
 }
 
@@ -489,7 +616,7 @@ function showError(message) {
     `;
 }
 
-// 🛡️ Échapper le HTML pour éviter les injections
+// 🛡️ Échapper le HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -533,4 +660,13 @@ function formatDate(dateValue) {
     }
 }
 
-console.log('✅ Widget Grist professionnel chargé et prêt');
+// 📦 Formatter la taille de fichier
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+console.log('✅ Widget Grist professionnel avec modal chargé et prêt');
