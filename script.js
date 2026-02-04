@@ -1,186 +1,311 @@
-// 🎯 Configuration FORCÉE des colonnes
-// On définit les colonnes AVANT tout le reste pour que Grist les lise immédiatement.
-grist.ready({
-  requiredAccess: 'read table',
-  allowSelectBy: true,
-  columns: [
-    { name: "title", title: "Titre (Obligatoire)", type: "Text", optional: false },
-    { name: "image", title: "Image", type: "Attachments", optional: true },
-    { name: "display", title: "Champs à afficher", type: "Any", allowMultiple: true, optional: true },
-    
-    // Filtres
-    { name: "f_category", title: "Filtre: Catégorie", type: "Text", optional: true },
-    { name: "f_institution", title: "Filtre: Institution", type: "Text", optional: true },
-    { name: "f_author", title: "Filtre: Auteur", type: "Text", optional: true },
-    { name: "f_validation", title: "Filtre: Validation", type: "Any", optional: true }
-  ],
-  onRecords: updateData
-});
-
+// 🎯 Configuration des colonnes pour le widget Grist
 let allData = [];
-let currentConfig = {};
+let currentMappings = null;
+let isConfigured = false;
 
-// 🎨 Gestionnaire de configuration
-grist.onOptions(function(options, interaction) {
-  currentConfig = interaction || {};
-  // Conversion sécurisée
-  if (currentConfig.display && !Array.isArray(currentConfig.display)) currentConfig.display = [currentConfig.display];
-  updateData();
+// 📋 Initialisation du widget avec configuration des colonnes
+grist.ready({
+    requiredAccess: 'read table',
+    allowSelectBy: true,
+    columns: [
+        // Colonnes principales
+        {
+            name: "title",
+            title: "Titre (Obligatoire)",
+            type: "Text",
+            optional: false,
+            description: "Colonne contenant le titre principal"
+        },
+        {
+            name: "description",
+            title: "Description",
+            type: "Text",
+            optional: true,
+            description: "Texte descriptif de l'élément"
+        },
+        {
+            name: "image",
+            title: "Image",
+            type: "Attachments",
+            optional: true,
+            description: "Image à afficher dans la carte"
+        },
+        {
+            name: "date",
+            title: "Date",
+            type: "Date,DateTime",
+            optional: true,
+            description: "Date associée à l'élément"
+        },
+        {
+            name: "category",
+            title: "Catégorie",
+            type: "Choice,Text",
+            optional: true,
+            description: "Catégorie de classification"
+        },
+        {
+            name: "status",
+            title: "Statut",
+            type: "Choice,Text",
+            optional: true,
+            description: "Statut actuel"
+        },
+        {
+            name: "author",
+            title: "Auteur",
+            type: "Text",
+            optional: true,
+            description: "Auteur ou créateur"
+        },
+        {
+            name: "additionalFields",
+            title: "Champs supplémentaires",
+            type: "Any",
+            allowMultiple: true,
+            optional: true,
+            description: "Sélectionnez toutes les colonnes supplémentaires à afficher"
+        }
+    ]
 });
 
-// 🔄 Récupération des données
-async function updateData() {
-  try {
-    const data = await grist.fetchSelectedTable();
-    processData(data);
-  } catch (e) {
-    console.error(e);
-  }
-}
+// 📊 Écoute des changements de données avec mappings
+grist.onRecords(function(records, mappings) {
+    try {
+        currentMappings = mappings;
 
-// ⚙️ Traitement
-function processData(data) {
-  const container = document.getElementById('results');
-  
-  // Reset si vide
-  if (!data || !data.id || data.id.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">Aucune donnée</div>`;
-    return;
-  }
+        // Vérifier si la colonne obligatoire est configurée
+        if (!mappings || !mappings.title) {
+            isConfigured = false;
+            showConfigurationMessage();
+            return;
+        }
 
-  // Si pas de config titre, on affiche un message clair
-  if (!currentConfig.title) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">
-        <div style="font-size:40px;margin-bottom:20px">⚙️</div>
-        <strong>Configuration requise</strong><br><br>
-        Le panneau de droite doit afficher des menus déroulants.<br>
-        Si vous voyez des cases à cocher, supprimez et réajoutez le widget.
-      </div>`;
-    return;
-  }
+        isConfigured = true;
 
-  // Parsing
-  allData = data.id.map((id, i) => {
-    const item = { 
-      id: id,
-      title: formatVal(data[currentConfig.title][i]),
-      image: extractImageUrl(currentConfig.image ? data[currentConfig.image][i] : null),
-      fields: [],
-      // Données filtres
-      f_category: currentConfig.f_category ? formatVal(data[currentConfig.f_category][i]) : null,
-      f_institution: currentConfig.f_institution ? formatVal(data[currentConfig.f_institution][i]) : null,
-      f_author: currentConfig.f_author ? formatVal(data[currentConfig.f_author][i]) : null,
-      f_validation: currentConfig.f_validation ? formatVal(data[currentConfig.f_validation][i]) : null,
-    };
+        // Utiliser le helper pour mapper automatiquement les colonnes
+        const mappedData = grist.mapColumnNames(records, {
+            mappings: mappings
+        });
 
-    // Champs dynamiques
-    if (currentConfig.display) {
-      currentConfig.display.forEach(colKey => {
-         if ([currentConfig.title, currentConfig.image].includes(colKey)) return;
-         const val = formatVal(data[colKey][i]);
-         if (val) item.fields.push({ label: colKey, value: val });
-      });
+        if (mappedData) {
+            allData = mappedData;
+            renderWidget(mappedData);
+        } else {
+            showConfigurationMessage();
+        }
+
+    } catch (error) {
+        console.error("Erreur lors du traitement des données:", error);
+        showError(error.message);
     }
-    
-    // Recherche
-    item.searchStr = [item.title, ...item.fields.map(f => f.value)].join(' ').toLowerCase();
-    return item;
-  });
+});
 
-  setupFilters();
-  applyFilters();
-}
+// 🎨 Fonction de rendu du widget
+function renderWidget(data) {
+    const container = document.getElementById('results');
 
-// 🏗️ Filtres UI
-function setupFilters() {
-  const container = document.getElementById('filters-container');
-  // On ne vide le conteneur que s'il est vide ou si la config a changé radicalement
-  // pour éviter le scintillement, mais ici on simplifie :
-  container.innerHTML = ''; 
+    // Vérifier si nous avons des données
+    if (!data || !data.id || data.id.length === 0) {
+        container.innerHTML = '<div class="no-data">Aucune donnée à afficher</div>';
+        return;
+    }
 
-  const filtersDef = [
-    { key: 'f_category', label: 'Catégorie', val: currentConfig.f_category },
-    { key: 'f_institution', label: 'Institution', val: currentConfig.f_institution },
-    { key: 'f_author', label: 'Auteur', val: currentConfig.f_author },
-    { key: 'f_validation', label: 'Validation', val: currentConfig.f_validation },
-  ];
+    container.innerHTML = '';
 
-  filtersDef.forEach(def => {
-    if (!def.val) return; // Pas de filtre si pas mappé
-
-    const values = [...new Set(allData.map(d => d[def.key]).filter(Boolean))].sort();
-    
-    const select = document.createElement('select');
-    select.className = 'filter-select';
-    select.id = `select-${def.key}`;
-    select.onchange = applyFilters;
-    select.innerHTML = `<option value="">${def.label}</option>`;
-    
-    values.forEach(val => {
-      select.innerHTML += `<option value="${val}">${val}</option>`;
+    // Créer une carte pour chaque ligne
+    data.id.forEach((id, index) => {
+        const card = createCard(data, index);
+        container.appendChild(card);
     });
-    container.appendChild(select);
-  });
 }
 
-// 🔎 Moteur de filtrage
-function applyFilters() {
-  const query = document.getElementById('search').value.toLowerCase().trim();
-  const filters = {
-    cat: document.getElementById('select-f_category')?.value,
-    inst: document.getElementById('select-f_institution')?.value,
-    auth: document.getElementById('select-f_author')?.value,
-    valid: document.getElementById('select-f_validation')?.value
-  };
+// 🃏 Création d'une carte individuelle
+function createCard(data, index) {
+    const card = document.createElement('div');
+    card.className = 'card';
 
-  const filtered = allData.filter(item => {
-    if (query && !item.searchStr.includes(query)) return false;
-    if (filters.cat && item.f_category !== filters.cat) return false;
-    if (filters.inst && item.f_institution !== filters.inst) return false;
-    if (filters.auth && item.f_author !== filters.auth) return false;
-    if (filters.valid && item.f_validation !== filters.valid) return false;
-    return true;
-  });
+    // Titre (obligatoire)
+    const title = data.title?.[index] || 'Sans titre';
 
-  renderGrid(filtered);
+    // Description
+    const description = data.description?.[index] || '';
+
+    // Image
+    const imageData = data.image?.[index];
+    let imageUrl = null;
+    if (imageData && Array.isArray(imageData) && imageData.length > 0) {
+        imageUrl = imageData[0];
+    }
+
+    // Construction du HTML
+    let cardHTML = '';
+
+    // Image si disponible
+    if (imageUrl) {
+        cardHTML += `<img src="${imageUrl}" alt="${title}" class="card-image" onerror="this.style.display='none'">`;
+    }
+
+    cardHTML += '<div class="card-content">';
+    cardHTML += `<h3 class="card-title">${escapeHtml(title)}</h3>`;
+
+    if (description) {
+        cardHTML += `<div class="card-description">${escapeHtml(description)}</div>`;
+    }
+
+    // Métadonnées (date, catégorie, statut, auteur)
+    const metadata = [];
+
+    if (data.date?.[index]) {
+        metadata.push({
+            label: 'Date',
+            value: formatDate(data.date[index])
+        });
+    }
+
+    if (data.category?.[index]) {
+        metadata.push({
+            label: 'Catégorie',
+            value: data.category[index]
+        });
+    }
+
+    if (data.status?.[index]) {
+        metadata.push({
+            label: 'Statut',
+            value: data.status[index]
+        });
+    }
+
+    if (data.author?.[index]) {
+        metadata.push({
+            label: 'Auteur',
+            value: data.author[index]
+        });
+    }
+
+    if (metadata.length > 0) {
+        cardHTML += '<div class="card-metadata">';
+        metadata.forEach(item => {
+            cardHTML += `
+                <div class="metadata-item">
+                    <span class="metadata-label">${item.label}:</span>
+                    <span>${escapeHtml(String(item.value))}</span>
+                </div>
+            `;
+        });
+        cardHTML += '</div>';
+    }
+
+    // Champs supplémentaires (si allowMultiple est utilisé)
+    if (data.additionalFields) {
+        const additionalData = data.additionalFields[index];
+
+        if (additionalData) {
+            cardHTML += '<div class="additional-fields">';
+
+            // Si c'est un tableau (plusieurs colonnes sélectionnées)
+            if (Array.isArray(additionalData)) {
+                additionalData.forEach((value, idx) => {
+                    if (value !== null && value !== undefined && value !== '') {
+                        cardHTML += `<div class="field-item">• ${escapeHtml(String(value))}</div>`;
+                    }
+                });
+            } else {
+                // Sinon afficher la valeur unique
+                cardHTML += `<div class="field-item">${escapeHtml(String(additionalData))}</div>`;
+            }
+
+            cardHTML += '</div>';
+        }
+    }
+
+    cardHTML += '</div>';
+    card.innerHTML = cardHTML;
+
+    // Permettre la sélection de la ligne dans Grist au clic
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+        grist.setCursorPos({rowId: id}).catch(console.error);
+    });
+
+    return card;
 }
 
-// 🖼️ Rendu
-function renderGrid(data) {
-  const container = document.getElementById('results');
-  document.getElementById('results-count').innerText = `(${data.length})`;
-
-  if (data.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">Aucun résultat</div>`;
-    return;
-  }
-
-  container.innerHTML = data.map(item => `
-    <div class="card" onclick="grist.setCursorPos({rowId: ${item.id}})">
-      ${item.image ? `<div class="card-image"><img src="${item.image}"></div>` : ''}
-      <div class="card-content">
-        <h3 class="card-title">${escapeHtml(item.title)}</h3>
-        ${item.fields.map(f => `<div class="field-row"><span class="field-label">${escapeHtml(f.label)}</span><span class="field-value">${escapeHtml(f.value)}</span></div>`).join('')}
-      </div>
-    </div>
-  `).join('');
+// 📝 Message de configuration
+function showConfigurationMessage() {
+    const container = document.getElementById('results');
+    container.innerHTML = `
+        <div class="config-message">
+            <h2>⚙️ Configuration requise</h2>
+            <p>Veuillez configurer au moins la colonne <strong>"Titre"</strong> dans le panneau de configuration à droite.</p>
+            <p style="margin-top: 1rem;">Vous pouvez également configurer les colonnes optionnelles pour enrichir l'affichage.</p>
+        </div>
+    `;
 }
 
-// 🛠️ Helpers
-function formatVal(v) {
-  if (v == null || v === '') return null;
-  if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
-  if (Array.isArray(v)) return v.length > 0 && typeof v[0] !== 'object' ? v.join(', ') : v[0]?.toString();
-  if (typeof v === 'object') return null;
-  return String(v);
+// ❌ Affichage d'erreur
+function showError(message) {
+    const container = document.getElementById('results');
+    container.innerHTML = `
+        <div class="error-message">
+            <strong>Erreur:</strong> ${escapeHtml(message)}
+        </div>
+    `;
 }
 
-function extractImageUrl(v) {
-  if (Array.isArray(v) && v[0]?.url) return v[0].url;
-  return null;
-}
-
+// 🛡️ Échapper le HTML pour éviter les injections
 function escapeHtml(text) {
-  return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
+
+// 📅 Formatter une date
+function formatDate(dateValue) {
+    if (!dateValue) return '';
+
+    try {
+        // Si c'est un timestamp
+        if (typeof dateValue === 'number') {
+            const date = new Date(dateValue * 1000);
+            return date.toLocaleDateString('fr-FR', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        // Si c'est déjà une date
+        if (dateValue instanceof Date) {
+            return dateValue.toLocaleDateString('fr-FR', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        // Si c'est une chaîne
+        const date = new Date(dateValue);
+        if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString('fr-FR', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        return String(dateValue);
+    } catch (e) {
+        return String(dateValue);
+    }
+}
+
+// 🔄 Gestion du redimensionnement
+window.addEventListener('resize', () => {
+    if (isConfigured && allData) {
+        renderWidget(allData);
+    }
+});
+
+console.log('✅ Widget Grist configurable chargé');
