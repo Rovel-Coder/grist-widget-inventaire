@@ -3,242 +3,160 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Grist Widget Générique</title>
+  <title>Inventaire Interactif</title>
+  <!-- On garde le style existant et on ajoute le style des filtres -->
   <style>
     :root { 
-      --primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      --glass-bg: rgba(255, 255, 255, 0.12);
-      --glass-border: rgba(255, 255, 255, 0.25);
-      --shadow-light: 0 8px 32px rgba(31, 38, 135, 0.15);
-      --shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.25);
+      --primary: #5e6ad2;
+      --bg-card: #ffffff;
+      --text-main: #2c3e50;
+      --text-sec: #7f8c8d;
     }
 
-    * { 
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: transparent;
       margin: 0; 
-      padding: 0; 
-      box-sizing: border-box; 
+      padding: 16px;
     }
 
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-    }
-
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
+    /* --- Header & Search --- */
+    .header {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
     .search-box {
-      background: var(--glass-bg);
-      backdrop-filter: blur(10px);
-      border: 1px solid var(--glass-border);
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: var(--shadow-light);
-    }
-
-    .search-header {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      margin-bottom: 12px;
-    }
-
-    .search-header h2 {
-      color: white;
-      font-size: 20px;
-      font-weight: 600;
-      flex: 1;
-    }
-
-    .results-count {
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 14px;
-      font-weight: 500;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 6px 12px;
-      border-radius: 8px;
-    }
-
-    .search-box input {
       width: 100%;
-      padding: 14px 20px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 16px;
+      border: 2px solid #eef2f7;
+      border-radius: 8px;
       font-size: 16px;
-      transition: all 0.3s;
-    }
-
-    .search-box input:focus {
       outline: none;
-      border-color: #fff;
-      background: white;
-      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
+      transition: border-color 0.2s;
+      box-sizing: border-box; /* Important */
+    }
+    .search-box:focus { border-color: var(--primary); }
+
+    /* --- Zone des Filtres --- */
+    .filters-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
-    .search-box input::placeholder {
-      color: #95a5a6;
+    .filter-select {
+      flex: 1;
+      min-width: 140px;
+      padding: 10px;
+      border: 1px solid #eef2f7;
+      background-color: #f8fafc;
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text-main);
+      cursor: pointer;
     }
+    .filter-select:hover { border-color: #cbd5e1; }
 
-    #results {
+    /* --- Grille des cartes --- */
+    .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 20px;
     }
 
     .card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
       overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      transition: transform 0.2s, box-shadow 0.2s;
       cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: var(--shadow-light);
-      border: 1px solid rgba(255, 255, 255, 0.5);
+      display: flex;
+      flex-direction: column;
+      border: 1px solid transparent;
     }
-
     .card:hover {
-      transform: translateY(-8px) scale(1.02);
-      box-shadow: var(--shadow-hover);
-      background: white;
+      transform: translateY(-4px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      border-color: var(--primary);
     }
 
     .card-image {
+      height: 160px;
       width: 100%;
-      height: 220px;
+      background-color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       overflow: hidden;
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-      position: relative;
     }
-
     .card-image img {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform 0.3s;
     }
 
-    .card:hover .card-image img {
-      transform: scale(1.1);
-    }
-
-    .card-content {
-      padding: 20px;
-    }
-
+    .card-content { padding: 16px; }
+    
     .card-title {
+      margin: 0 0 12px 0;
       font-size: 18px;
       font-weight: 600;
-      color: #2c3e50;
-      margin-bottom: 14px;
-      line-height: 1.4;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-      overflow: hidden;
+      color: var(--text-main);
     }
 
     .field-row {
       display: flex;
-      margin-bottom: 8px;
-      font-size: 14px;
-      line-height: 1.5;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 6px;
+      border-bottom: 1px dashed #f0f0f0;
+      padding-bottom: 4px;
     }
-
-    .field-label {
-      font-weight: 600;
-      color: #7f8c8d;
-      margin-right: 8px;
-      text-transform: capitalize;
-      min-width: 100px;
-      flex-shrink: 0;
+    .field-label { color: var(--text-sec); font-weight: 500; }
+    .field-value { color: var(--text-main); font-weight: 600; text-align: right; }
+    
+    /* Indicateur de validation (badge) */
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
     }
+    .badge-yes { background: #dcfce7; color: #166534; }
+    .badge-no { background: #fee2e2; color: #991b1b; }
 
-    .field-value {
-      color: #34495e;
-      flex: 1;
-      word-break: break-word;
-    }
-
-    /* États vides */
-    .empty-state {
-      padding: 60px 20px;
-      text-align: center;
-      background: rgba(255, 255, 255, 0.9);
-      border-radius: 16px;
-      grid-column: 1/-1;
-    }
-
-    .empty-state-icon {
-      font-size: 64px;
-      margin-bottom: 20px;
-      opacity: 0.5;
-    }
-
-    .empty-state-title {
-      font-size: 20px;
-      font-weight: 600;
-      color: #2c3e50;
-      margin-bottom: 8px;
-    }
-
-    .empty-state-text {
-      font-size: 16px;
-      color: #7f8c8d;
-      line-height: 1.6;
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-      body {
-        padding: 12px;
-      }
-
-      #results {
-        grid-template-columns: 1fr;
-        gap: 15px;
-      }
-
-      .search-header {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .field-label {
-        min-width: auto;
-      }
+    #results-count {
+      font-size: 12px;
+      color: var(--text-sec);
+      margin-left: 4px;
     }
   </style>
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 </head>
 <body>
-  <div class="container">
-    <div class="search-box">
-      <div class="search-header">
-        <h2>🔍 Recherche</h2>
-        <div class="results-count" id="results-count">0 résultat</div>
-      </div>
-      <input 
-        type="text" 
-        id="search" 
-        placeholder="Rechercher dans vos données..." 
-        oninput="search()"
-        autocomplete="off"
-      >
+
+  <div class="header">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0; font-size:18px; color:#333;">Inventaire <span id="results-count"></span></h2>
     </div>
-    <div id="results">
-      <div class="empty-state">
-        <div class="empty-state-icon">⏳</div>
-        <div class="empty-state-title">Chargement...</div>
-        <div class="empty-state-text">Veuillez patienter</div>
-      </div>
-    </div>
+    
+    <input type="text" id="search" class="search-box" placeholder="Rechercher par mot-clé..." oninput="applyFilters()">
+    
+    <!-- Zone où les selects seront injectés par JS -->
+    <div id="filters-container" class="filters-row"></div>
   </div>
+
+  <div id="results" class="grid"></div>
   <script src="script.js"></script>
 </body>
 </html>
