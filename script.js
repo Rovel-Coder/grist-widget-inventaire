@@ -5,7 +5,7 @@ let currentMappings = null;
 let isConfigured = false;
 let searchTerm = '';
 let statusColors = {};
-let allColumns = {}; // Stockage de TOUTES les colonnes
+let allColumns = {};
 
 // 📋 Initialisation du widget avec configuration des colonnes
 grist.ready({
@@ -100,7 +100,6 @@ grist.onRecords(async function(records, mappings) {
         const tableData = await grist.fetchSelectedTable();
         console.log('📋 Données table complète:', tableData);
 
-        // Stocker TOUTES les colonnes pour le modal
         allColumns = tableData;
 
         const mappedData = grist.mapColumnNames(tableData, {
@@ -111,7 +110,13 @@ grist.onRecords(async function(records, mappings) {
 
         if (mappedData && mappedData.id && mappedData.id.length > 0) {
             allData = mappedData;
-            showSearchPrompt();
+
+            // Si on a déjà un terme de recherche, l'appliquer
+            if (searchTerm) {
+                applySearch();
+            } else {
+                showSearchPrompt();
+            }
         } else {
             allData = [];
             showNoData();
@@ -172,6 +177,7 @@ const searchBar = document.getElementById('searchBar');
 
 searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value.toLowerCase().trim();
+    console.log('🔍 Recherche:', searchTerm);
 
     if (searchTerm.length > 0) {
         applySearch();
@@ -182,7 +188,8 @@ searchInput.addEventListener('input', (e) => {
 
 // 🎯 Appliquer la recherche
 function applySearch() {
-    if (!allData || !allData.id) {
+    if (!allData || !allData.id || allData.id.length === 0) {
+        console.log('⚠️ Pas de données à rechercher');
         return;
     }
 
@@ -191,6 +198,9 @@ function applySearch() {
         return;
     }
 
+    console.log('🔎 Application de la recherche sur', allData.id.length, 'éléments');
+
+    // Filtrer les données
     const filtered = {
         id: [],
         title: [],
@@ -205,13 +215,17 @@ function applySearch() {
     };
 
     allData.id.forEach((id, index) => {
-        const searchableText = [
-            allData.title?.[index],
-            allData.description?.[index],
-            allData.category?.[index],
-            allData.status?.[index],
-            allData.author?.[index]
-        ].filter(Boolean).join(' ').toLowerCase();
+        // Recherche dans tous les champs textuels
+        const titleText = allData.title?.[index] || '';
+        const descText = allData.description?.[index] || '';
+        const catText = allData.category?.[index] || '';
+        const statusText = allData.status?.[index] || '';
+        const authorText = allData.author?.[index] || '';
+
+        const searchableText = [titleText, descText, catText, statusText, authorText]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
 
         if (searchableText.includes(searchTerm)) {
             filtered.id.push(id);
@@ -226,6 +240,8 @@ function applySearch() {
             if (allData.additionalFields) filtered.additionalFields.push(allData.additionalFields[index]);
         }
     });
+
+    console.log('✅ Résultats trouvés:', filtered.id.length);
 
     filteredData = filtered;
     renderWidget(filtered);
@@ -247,7 +263,12 @@ function showSearchPrompt() {
     searchBar.classList.remove('hidden');
     const container = document.getElementById('results');
     const statsElement = document.getElementById('searchStats');
-    statsElement.textContent = `${allData.id.length} produit${allData.id.length > 1 ? 's' : ''} disponible${allData.id.length > 1 ? 's' : ''}`;
+
+    if (allData && allData.id) {
+        statsElement.textContent = `${allData.id.length} produit${allData.id.length > 1 ? 's' : ''} disponible${allData.id.length > 1 ? 's' : ''}`;
+    } else {
+        statsElement.textContent = '';
+    }
 
     container.innerHTML = `
         <div class="search-prompt">
@@ -367,7 +388,6 @@ function createCard(data, index, rowId) {
     cardHTML += '</div>';
     card.innerHTML = cardHTML;
 
-    // Ouvrir le modal au lieu de sélectionner la ligne
     card.style.cursor = 'pointer';
     card.addEventListener('click', () => {
         openModal(data, index, rowId);
@@ -389,7 +409,6 @@ function openModal(data, index, rowId) {
 
     let modalHTML = '';
 
-    // Header
     modalHTML += '<div class="modal-header">';
     modalHTML += `<h2>${escapeHtml(title)}</h2>`;
     modalHTML += '<button class="modal-close" onclick="closeModal()">✕</button>';
@@ -397,7 +416,6 @@ function openModal(data, index, rowId) {
 
     modalHTML += '<div class="modal-body">';
 
-    // Badge de statut
     if (statusValue) {
         const colors = getStatusColors(statusValue);
         modalHTML += `
@@ -407,7 +425,6 @@ function openModal(data, index, rowId) {
         `;
     }
 
-    // Galerie d'images
     if (imageData && Array.isArray(imageData) && imageData.length > 0) {
         modalHTML += '<div class="modal-section">';
         modalHTML += '<div class="modal-section-title">📸 Images</div>';
@@ -424,7 +441,6 @@ function openModal(data, index, rowId) {
         modalHTML += '</div>';
     }
 
-    // Description complète
     if (description) {
         modalHTML += '<div class="modal-section">';
         modalHTML += '<div class="modal-section-title">📝 Description</div>';
@@ -432,7 +448,6 @@ function openModal(data, index, rowId) {
         modalHTML += '</div>';
     }
 
-    // Informations principales
     const hasInfo = data.date?.[index] || data.category?.[index] || data.author?.[index];
     if (hasInfo) {
         modalHTML += '<div class="modal-section">';
@@ -470,7 +485,6 @@ function openModal(data, index, rowId) {
         modalHTML += '</div>';
     }
 
-    // Pièces jointes
     if (attachmentsData && Array.isArray(attachmentsData) && attachmentsData.length > 0) {
         modalHTML += '<div class="modal-section">';
         modalHTML += '<div class="modal-section-title">📎 Pièces jointes</div>';
@@ -499,7 +513,6 @@ function openModal(data, index, rowId) {
         modalHTML += '</div>';
     }
 
-    // Champs supplémentaires
     if (data.additionalFields) {
         const additionalData = data.additionalFields[index];
 
@@ -537,7 +550,6 @@ function openModal(data, index, rowId) {
     modal.classList.remove('hidden');
     setTimeout(() => modal.classList.add('active'), 10);
 
-    // Sélectionner la ligne dans Grist
     grist.setCursorPos({rowId: rowId}).catch(err => console.error('Erreur setCursorPos:', err));
 }
 
@@ -548,7 +560,6 @@ function closeModal() {
     setTimeout(() => modal.classList.add('hidden'), 300);
 }
 
-// Fermer au clic sur l'overlay
 document.getElementById('modalOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'modalOverlay') {
         closeModal();
@@ -585,7 +596,6 @@ function getStatusColors(statusValue) {
     return { fillColor: '#e0e0e0', textColor: '#333333' };
 }
 
-// 📝 Message de configuration
 function showConfigurationMessage() {
     searchBar.classList.add('hidden');
     const container = document.getElementById('results');
@@ -598,14 +608,12 @@ function showConfigurationMessage() {
     `;
 }
 
-// 📭 Message aucune donnée
 function showNoData() {
     searchBar.classList.add('hidden');
     const container = document.getElementById('results');
     container.innerHTML = '<div class="no-data">📭 Aucune donnée dans la table</div>';
 }
 
-// ❌ Affichage d'erreur
 function showError(message) {
     searchBar.classList.add('hidden');
     const container = document.getElementById('results');
@@ -616,14 +624,12 @@ function showError(message) {
     `;
 }
 
-// 🛡️ Échapper le HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// 📅 Formatter une date
 function formatDate(dateValue) {
     if (!dateValue) return '';
 
@@ -660,7 +666,6 @@ function formatDate(dateValue) {
     }
 }
 
-// 📦 Formatter la taille de fichier
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
