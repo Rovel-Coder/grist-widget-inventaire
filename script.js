@@ -1,32 +1,30 @@
-// 🎯 Configuration complète des colonnes
+// 🎯 Configuration FORCÉE des colonnes
+// On définit les colonnes AVANT tout le reste pour que Grist les lise immédiatement.
 grist.ready({
   requiredAccess: 'read table',
   allowSelectBy: true,
   columns: [
-    // --- Colonnes obligatoires pour l'affichage ---
-    { name: "title", title: "Titre (Obligatoire)", type: "Text" },
-    
-    // --- Colonnes visuelles ---
+    { name: "title", title: "Titre (Obligatoire)", type: "Text", optional: false },
     { name: "image", title: "Image", type: "Attachments", optional: true },
-    { name: "display", title: "Champs à afficher dans la carte", type: "Any", allowMultiple: true, optional: true },
+    { name: "display", title: "Champs à afficher", type: "Any", allowMultiple: true, optional: true },
     
-    // --- Colonnes pour les FILTRES (Dropdowns) ---
-    // Si l'utilisateur mappe ces colonnes, le filtre apparaitra
-    { name: "filter_category", title: "Filtre: Catégorie", type: "Text", optional: true },
-    { name: "filter_institution", title: "Filtre: Institution", type: "Text", optional: true },
-    { name: "filter_author", title: "Filtre: Auteur", type: "Text", optional: true },
-    { name: "filter_validation", title: "Filtre: Validation", type: "Any", optional: true }
+    // Filtres
+    { name: "f_category", title: "Filtre: Catégorie", type: "Text", optional: true },
+    { name: "f_institution", title: "Filtre: Institution", type: "Text", optional: true },
+    { name: "f_author", title: "Filtre: Auteur", type: "Text", optional: true },
+    { name: "f_validation", title: "Filtre: Validation", type: "Any", optional: true }
   ],
   onRecords: updateData
 });
 
 let allData = [];
 let currentConfig = {};
-let uniqueValues = {}; // Pour stocker les listes déroulantes
 
 // 🎨 Gestionnaire de configuration
 grist.onOptions(function(options, interaction) {
   currentConfig = interaction || {};
+  // Conversion sécurisée
+  if (currentConfig.display && !Array.isArray(currentConfig.display)) currentConfig.display = [currentConfig.display];
   updateData();
 });
 
@@ -44,95 +42,84 @@ async function updateData() {
 function processData(data) {
   const container = document.getElementById('results');
   
+  // Reset si vide
   if (!data || !data.id || data.id.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">Aucune donnée</div>`;
     return;
   }
 
-  // Vérification config minimale
+  // Si pas de config titre, on affiche un message clair
   if (!currentConfig.title) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">⚠️ Veuillez configurer la colonne <b>Titre</b> dans le panneau de droite.</div>`;
+    container.innerHTML = `
+      <div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">
+        <div style="font-size:40px;margin-bottom:20px">⚙️</div>
+        <strong>Configuration requise</strong><br><br>
+        Le panneau de droite doit afficher des menus déroulants.<br>
+        Si vous voyez des cases à cocher, supprimez et réajoutez le widget.
+      </div>`;
     return;
   }
 
-  // 1. Transformer les données brutes en objets propres
+  // Parsing
   allData = data.id.map((id, i) => {
     const item = { 
       id: id,
       title: formatVal(data[currentConfig.title][i]),
       image: extractImageUrl(currentConfig.image ? data[currentConfig.image][i] : null),
       fields: [],
-      // Données pour les filtres
-      f_category: currentConfig.filter_category ? formatVal(data[currentConfig.filter_category][i]) : null,
-      f_institution: currentConfig.filter_institution ? formatVal(data[currentConfig.filter_institution][i]) : null,
-      f_author: currentConfig.filter_author ? formatVal(data[currentConfig.filter_author][i]) : null,
-      f_validation: currentConfig.filter_validation ? formatVal(data[currentConfig.filter_validation][i]) : null,
+      // Données filtres
+      f_category: currentConfig.f_category ? formatVal(data[currentConfig.f_category][i]) : null,
+      f_institution: currentConfig.f_institution ? formatVal(data[currentConfig.f_institution][i]) : null,
+      f_author: currentConfig.f_author ? formatVal(data[currentConfig.f_author][i]) : null,
+      f_validation: currentConfig.f_validation ? formatVal(data[currentConfig.f_validation][i]) : null,
     };
 
-    // Champs à afficher
-    if (currentConfig.display && Array.isArray(currentConfig.display)) {
+    // Champs dynamiques
+    if (currentConfig.display) {
       currentConfig.display.forEach(colKey => {
-         // On n'affiche pas les colonnes techniques dans le corps de la carte
          if ([currentConfig.title, currentConfig.image].includes(colKey)) return;
-         
          const val = formatVal(data[colKey][i]);
          if (val) item.fields.push({ label: colKey, value: val });
       });
-    } else if (typeof currentConfig.display === 'string') {
-       // Cas où une seule colonne est sélectionnée
-       const val = formatVal(data[currentConfig.display][i]);
-       if (val) item.fields.push({ label: currentConfig.display, value: val });
     }
     
-    // Chaîne de recherche globale (Titre + tous les champs visibles)
-    const allText = [item.title, ...item.fields.map(f => f.value)].join(' ').toLowerCase();
-    item.searchStr = allText;
-
+    // Recherche
+    item.searchStr = [item.title, ...item.fields.map(f => f.value)].join(' ').toLowerCase();
     return item;
   });
 
-  // 2. Générer les filtres dynamiquement
   setupFilters();
-
-  // 3. Afficher
   applyFilters();
 }
 
-// 🏗️ Construction des menus déroulants
+// 🏗️ Filtres UI
 function setupFilters() {
   const container = document.getElementById('filters-container');
-  container.innerHTML = ''; // Reset
+  // On ne vide le conteneur que s'il est vide ou si la config a changé radicalement
+  // pour éviter le scintillement, mais ici on simplifie :
+  container.innerHTML = ''; 
 
-  // Liste des filtres potentiels à créer
   const filtersDef = [
-    { key: 'f_category', label: 'Catégorie', active: !!currentConfig.filter_category },
-    { key: 'f_institution', label: 'Institution', active: !!currentConfig.filter_institution },
-    { key: 'f_author', label: 'Auteur', active: !!currentConfig.filter_author },
-    { key: 'f_validation', label: 'Validation', active: !!currentConfig.filter_validation },
+    { key: 'f_category', label: 'Catégorie', val: currentConfig.f_category },
+    { key: 'f_institution', label: 'Institution', val: currentConfig.f_institution },
+    { key: 'f_author', label: 'Auteur', val: currentConfig.f_author },
+    { key: 'f_validation', label: 'Validation', val: currentConfig.f_validation },
   ];
 
   filtersDef.forEach(def => {
-    if (!def.active) return; // On ne crée pas le select si la colonne n'est pas mappée
+    if (!def.val) return; // Pas de filtre si pas mappé
 
-    // Récupérer valeurs uniques
     const values = [...new Set(allData.map(d => d[def.key]).filter(Boolean))].sort();
     
-    // Créer le HTML Select
     const select = document.createElement('select');
     select.className = 'filter-select';
     select.id = `select-${def.key}`;
-    select.onchange = applyFilters; // Déclenche le filtre au changement
-
-    // Option par défaut
-    select.innerHTML = `<option value="">Tous : ${def.label}</option>`;
+    select.onchange = applyFilters;
+    select.innerHTML = `<option value="">${def.label}</option>`;
     
     values.forEach(val => {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.innerText = val;
-      select.appendChild(opt);
+      select.innerHTML += `<option value="${val}">${val}</option>`;
     });
-
     container.appendChild(select);
   });
 }
@@ -140,36 +127,32 @@ function setupFilters() {
 // 🔎 Moteur de filtrage
 function applyFilters() {
   const query = document.getElementById('search').value.toLowerCase().trim();
-  
-  // Récupérer les valeurs actuelles des selects existants
-  const catFilter = document.getElementById('select-f_category')?.value;
-  const instFilter = document.getElementById('select-f_institution')?.value;
-  const authFilter = document.getElementById('select-f_author')?.value;
-  const validFilter = document.getElementById('select-f_validation')?.value;
+  const filters = {
+    cat: document.getElementById('select-f_category')?.value,
+    inst: document.getElementById('select-f_institution')?.value,
+    auth: document.getElementById('select-f_author')?.value,
+    valid: document.getElementById('select-f_validation')?.value
+  };
 
   const filtered = allData.filter(item => {
-    // 1. Recherche texte
     if (query && !item.searchStr.includes(query)) return false;
-
-    // 2. Filtres Selects (si actifs)
-    if (catFilter && item.f_category !== catFilter) return false;
-    if (instFilter && item.f_institution !== instFilter) return false;
-    if (authFilter && item.f_author !== authFilter) return false;
-    if (validFilter && item.f_validation !== validFilter) return false;
-
+    if (filters.cat && item.f_category !== filters.cat) return false;
+    if (filters.inst && item.f_institution !== filters.inst) return false;
+    if (filters.auth && item.f_author !== filters.auth) return false;
+    if (filters.valid && item.f_validation !== filters.valid) return false;
     return true;
   });
 
   renderGrid(filtered);
 }
 
-// 🖼️ Affichage Grille
+// 🖼️ Rendu
 function renderGrid(data) {
   const container = document.getElementById('results');
   document.getElementById('results-count').innerText = `(${data.length})`;
 
   if (data.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">Aucun résultat ne correspond à vos filtres.</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:#888;grid-column:1/-1">Aucun résultat</div>`;
     return;
   }
 
@@ -178,13 +161,7 @@ function renderGrid(data) {
       ${item.image ? `<div class="card-image"><img src="${item.image}"></div>` : ''}
       <div class="card-content">
         <h3 class="card-title">${escapeHtml(item.title)}</h3>
-        
-        ${item.fields.map(f => `
-          <div class="field-row">
-            <span class="field-label">${escapeHtml(f.label)}</span>
-            <span class="field-value">${escapeHtml(f.value)}</span>
-          </div>
-        `).join('')}
+        ${item.fields.map(f => `<div class="field-row"><span class="field-label">${escapeHtml(f.label)}</span><span class="field-value">${escapeHtml(f.value)}</span></div>`).join('')}
       </div>
     </div>
   `).join('');
@@ -192,19 +169,18 @@ function renderGrid(data) {
 
 // 🛠️ Helpers
 function formatVal(v) {
-  if (v === null || v === undefined || v === '') return null;
+  if (v == null || v === '') return null;
   if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
   if (Array.isArray(v)) return v.length > 0 && typeof v[0] !== 'object' ? v.join(', ') : v[0]?.toString();
-  if (typeof v === 'object') return null; 
+  if (typeof v === 'object') return null;
   return String(v);
 }
 
 function extractImageUrl(v) {
-  if (Array.isArray(v) && v.length > 0 && v[0].url) return v[0].url;
+  if (Array.isArray(v) && v[0]?.url) return v[0].url;
   return null;
 }
 
 function escapeHtml(text) {
-  if (!text) return '';
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
