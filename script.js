@@ -4,13 +4,13 @@ let filteredData = [];
 let currentMappings = null;
 let isConfigured = false;
 let searchTerm = '';
+let statusColors = {}; // Stockage des couleurs de statut
 
 // 📋 Initialisation du widget avec configuration des colonnes
 grist.ready({
     requiredAccess: 'read table',
     allowSelectBy: true,
     columns: [
-        // Colonnes principales
         {
             name: "title",
             title: "Titre (Obligatoire)",
@@ -49,9 +49,9 @@ grist.ready({
         {
             name: "status",
             title: "Statut",
-            type: "Choice,Text",
+            type: "Choice",
             optional: true,
-            description: "Statut actuel"
+            description: "Statut actuel avec couleurs"
         },
         {
             name: "author",
@@ -88,6 +88,9 @@ grist.onRecords(async function(records, mappings) {
 
         isConfigured = true;
 
+        // Récupérer les métadonnées de la table pour obtenir les couleurs
+        await fetchStatusColors(mappings);
+
         // Récupérer les données de la table complète
         const tableData = await grist.fetchSelectedTable();
         console.log('📋 Données table complète:', tableData);
@@ -101,7 +104,9 @@ grist.onRecords(async function(records, mappings) {
 
         if (mappedData && mappedData.id && mappedData.id.length > 0) {
             allData = mappedData;
-            applySearch();
+
+            // Afficher le message de recherche au lieu des cartes
+            showSearchPrompt();
         } else {
             allData = [];
             showNoData();
@@ -113,13 +118,71 @@ grist.onRecords(async function(records, mappings) {
     }
 });
 
+// 🎨 Récupérer les couleurs de la colonne Choice (statut)
+async function fetchStatusColors(mappings) {
+    try {
+        if (!mappings.status) {
+            return;
+        }
+
+        // Récupérer les métadonnées des colonnes
+        const tables = await grist.docApi.fetchTable('_grist_Tables_column');
+        const statusColumnName = mappings.status;
+
+        console.log('🔍 Recherche de la colonne:', statusColumnName);
+        console.log('📋 Tables disponibles:', tables);
+
+        // Trouver la colonne de statut
+        const statusColumn = tables.colId.findIndex((colId, idx) => {
+            return tables.label && tables.label[idx] === statusColumnName;
+        });
+
+        if (statusColumn !== -1 && tables.widgetOptions && tables.widgetOptions[statusColumn]) {
+            const widgetOptions = tables.widgetOptions[statusColumn];
+            console.log('⚙️ Widget options:', widgetOptions);
+
+            // Parser les options si c'est une chaîne JSON
+            if (typeof widgetOptions === 'string') {
+                try {
+                    const options = JSON.parse(widgetOptions);
+                    if (options.choices) {
+                        // Extraire les couleurs des choix
+                        statusColors = {};
+                        options.choices.forEach(choice => {
+                            if (typeof choice === 'object' && choice.value) {
+                                statusColors[choice.value] = {
+                                    fillColor: choice.fillColor || '#e0e0e0',
+                                    textColor: choice.textColor || '#000000'
+                                };
+                            }
+                        });
+                        console.log('🎨 Couleurs de statut récupérées:', statusColors);
+                    }
+                } catch (e) {
+                    console.log('⚠️ Impossible de parser widgetOptions:', e);
+                }
+            }
+        }
+
+    } catch (error) {
+        console.log('⚠️ Impossible de récupérer les couleurs:', error);
+    }
+}
+
 // 🔍 Barre de recherche
 const searchInput = document.getElementById('searchInput');
 const searchBar = document.getElementById('searchBar');
 
 searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value.toLowerCase().trim();
-    applySearch();
+
+    // Si on commence à taper, afficher les résultats
+    if (searchTerm.length > 0) {
+        applySearch();
+    } else {
+        // Si on efface tout, revenir au message de recherche
+        showSearchPrompt();
+    }
 });
 
 // 🎯 Appliquer la recherche
@@ -129,9 +192,7 @@ function applySearch() {
     }
 
     if (!searchTerm) {
-        filteredData = allData;
-        renderWidget(allData);
-        updateSearchStats(allData.id.length, allData.id.length);
+        showSearchPrompt();
         return;
     }
 
@@ -180,10 +241,26 @@ function applySearch() {
 function updateSearchStats(shown, total) {
     const statsElement = document.getElementById('searchStats');
     if (shown === total) {
-        statsElement.textContent = `${total} résultat${total > 1 ? 's' : ''}`;
+        statsElement.textContent = `✨ ${total} produit${total > 1 ? 's' : ''} trouvé${total > 1 ? 's' : ''}`;
     } else {
-        statsElement.textContent = `${shown} résultat${shown > 1 ? 's' : ''} sur ${total}`;
+        statsElement.textContent = `✨ ${shown} produit${shown > 1 ? 's' : ''} trouvé${shown > 1 ? 's' : ''} sur ${total}`;
     }
+}
+
+// 💬 Message de recherche initial
+function showSearchPrompt() {
+    searchBar.classList.remove('hidden');
+    const container = document.getElementById('results');
+    const statsElement = document.getElementById('searchStats');
+    statsElement.textContent = `${allData.id.length} produit${allData.id.length > 1 ? 's' : ''} disponible${allData.id.length > 1 ? 's' : ''}`;
+
+    container.innerHTML = `
+        <div class="search-prompt">
+            <div class="search-prompt-icon">🔍</div>
+            <h2>Commencez votre recherche</h2>
+            <p>Tapez dans la barre de recherche pour afficher les produits</p>
+        </div>
+    `;
 }
 
 // 🎨 Fonction de rendu du widget
@@ -193,7 +270,7 @@ function renderWidget(data) {
 
     // Vérifier si nous avons des données
     if (!data || !data.id || data.id.length === 0) {
-        container.innerHTML = '<div class="no-data">Aucune donnée à afficher</div>';
+        container.innerHTML = '<div class="no-data">😔 Aucun produit ne correspond à votre recherche</div>';
         return;
     }
 
@@ -221,91 +298,118 @@ function createCard(data, index, rowId) {
     const imageData = data.image?.[index];
     let imageUrl = null;
     if (imageData && Array.isArray(imageData) && imageData.length > 0) {
-        // Grist retourne les attachments sous forme de tableau d'objets ou d'URLs
         imageUrl = typeof imageData[0] === 'string' ? imageData[0] : imageData[0]?.url;
     }
+
+    // Statut avec couleur
+    const statusValue = data.status?.[index];
 
     // Construction du HTML
     let cardHTML = '';
 
-    // Image si disponible
+    // Image ou placeholder
+    cardHTML += '<div class="card-image-container">';
     if (imageUrl) {
-        cardHTML += `<img src="${imageUrl}" alt="${escapeHtml(title)}" class="card-image" onerror="this.style.display='none'">`;
+        cardHTML += `<img src="${imageUrl}" alt="${escapeHtml(title)}" class="card-image" onerror="this.parentElement.innerHTML='<div class=\'card-no-image\'>📦</div>'">`;
+    } else {
+        cardHTML += '<div class="card-no-image">📦</div>';
     }
+    cardHTML += '</div>';
 
     cardHTML += '<div class="card-content">';
-    cardHTML += `<h3 class="card-title">${escapeHtml(title)}</h3>`;
 
+    // Header avec titre
+    cardHTML += '<div class="card-header">';
+    cardHTML += `<h3 class="card-title">${escapeHtml(title)}</h3>`;
+    cardHTML += '</div>';
+
+    // Badge de statut avec couleurs
+    if (statusValue) {
+        const colors = getStatusColors(statusValue);
+        cardHTML += `
+            <div class="status-badge" style="background-color: ${colors.fillColor}; color: ${colors.textColor};">
+                ${escapeHtml(statusValue)}
+            </div>
+        `;
+    }
+
+    // Description
     if (description) {
         cardHTML += `<div class="card-description">${escapeHtml(description)}</div>`;
     }
 
-    // Métadonnées (date, catégorie, statut, auteur)
-    const metadata = [];
+    // Métadonnées avec icônes
+    const hasMetadata = data.date?.[index] || data.category?.[index] || data.author?.[index];
 
-    if (data.date?.[index]) {
-        metadata.push({
-            label: 'Date',
-            value: formatDate(data.date[index])
-        });
-    }
-
-    if (data.category?.[index]) {
-        metadata.push({
-            label: 'Catégorie',
-            value: data.category[index]
-        });
-    }
-
-    if (data.status?.[index]) {
-        metadata.push({
-            label: 'Statut',
-            value: data.status[index]
-        });
-    }
-
-    if (data.author?.[index]) {
-        metadata.push({
-            label: 'Auteur',
-            value: data.author[index]
-        });
-    }
-
-    if (metadata.length > 0) {
+    if (hasMetadata) {
         cardHTML += '<div class="card-metadata">';
-        metadata.forEach(item => {
+
+        if (data.date?.[index]) {
             cardHTML += `
-                <div class="metadata-item">
-                    <span class="metadata-label">${item.label}:</span>
-                    <span>${escapeHtml(String(item.value))}</span>
+                <div class="metadata-row">
+                    <div class="metadata-icon" style="background: #e3f2fd; color: #1976d2;">📅</div>
+                    <div class="metadata-content">
+                        <div class="metadata-label">Date</div>
+                        <div class="metadata-value">${formatDate(data.date[index])}</div>
+                    </div>
                 </div>
             `;
-        });
+        }
+
+        if (data.category?.[index]) {
+            cardHTML += `
+                <div class="metadata-row">
+                    <div class="metadata-icon" style="background: #f3e5f5; color: #7b1fa2;">🏷️</div>
+                    <div class="metadata-content">
+                        <div class="metadata-label">Catégorie</div>
+                        <div class="metadata-value">${escapeHtml(String(data.category[index]))}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (data.author?.[index]) {
+            cardHTML += `
+                <div class="metadata-row">
+                    <div class="metadata-icon" style="background: #e8f5e9; color: #388e3c;">👤</div>
+                    <div class="metadata-content">
+                        <div class="metadata-label">Auteur</div>
+                        <div class="metadata-value">${escapeHtml(String(data.author[index]))}</div>
+                    </div>
+                </div>
+            `;
+        }
+
         cardHTML += '</div>';
     }
 
-    // Champs supplémentaires (si allowMultiple est utilisé)
+    // Champs supplémentaires
     if (data.additionalFields) {
         const additionalData = data.additionalFields[index];
 
         if (additionalData) {
-            cardHTML += '<div class="additional-fields">';
+            const fieldsToShow = [];
 
-            // Si c'est un tableau (plusieurs colonnes sélectionnées)
             if (Array.isArray(additionalData)) {
                 additionalData.forEach((value) => {
                     if (value !== null && value !== undefined && value !== '') {
-                        cardHTML += `<div class="field-item">• ${escapeHtml(String(value))}</div>`;
+                        fieldsToShow.push(escapeHtml(String(value)));
                     }
                 });
             } else {
-                // Sinon afficher la valeur unique
                 if (additionalData !== null && additionalData !== undefined && additionalData !== '') {
-                    cardHTML += `<div class="field-item">${escapeHtml(String(additionalData))}</div>`;
+                    fieldsToShow.push(escapeHtml(String(additionalData)));
                 }
             }
 
-            cardHTML += '</div>';
+            if (fieldsToShow.length > 0) {
+                cardHTML += '<div class="additional-fields">';
+                cardHTML += '<div class="additional-fields-title">Informations complémentaires</div>';
+                fieldsToShow.forEach(field => {
+                    cardHTML += `<div class="field-item">${field}</div>`;
+                });
+                cardHTML += '</div>';
+            }
         }
     }
 
@@ -319,6 +423,39 @@ function createCard(data, index, rowId) {
     });
 
     return card;
+}
+
+// 🎨 Obtenir les couleurs du statut
+function getStatusColors(statusValue) {
+    // Si on a récupéré les couleurs depuis Grist
+    if (statusColors[statusValue]) {
+        return statusColors[statusValue];
+    }
+
+    // Couleurs par défaut basées sur des mots-clés courants
+    const defaultColors = {
+        'validé': { fillColor: '#d4edda', textColor: '#155724' },
+        'valide': { fillColor: '#d4edda', textColor: '#155724' },
+        'validée': { fillColor: '#d4edda', textColor: '#155724' },
+        'en cours': { fillColor: '#fff3cd', textColor: '#856404' },
+        'en attente': { fillColor: '#fff3cd', textColor: '#856404' },
+        'attente': { fillColor: '#fff3cd', textColor: '#856404' },
+        'non validé': { fillColor: '#f8d7da', textColor: '#721c24' },
+        'refusé': { fillColor: '#f8d7da', textColor: '#721c24' },
+        'brouillon': { fillColor: '#e2e3e5', textColor: '#383d41' },
+        'archivé': { fillColor: '#e2e3e5', textColor: '#383d41' }
+    };
+
+    const lowerStatus = statusValue.toLowerCase();
+
+    for (const [key, colors] of Object.entries(defaultColors)) {
+        if (lowerStatus.includes(key)) {
+            return colors;
+        }
+    }
+
+    // Couleur par défaut
+    return { fillColor: '#e0e0e0', textColor: '#333333' };
 }
 
 // 📝 Message de configuration
@@ -338,7 +475,7 @@ function showConfigurationMessage() {
 function showNoData() {
     searchBar.classList.add('hidden');
     const container = document.getElementById('results');
-    container.innerHTML = '<div class="no-data">Aucune donnée dans la table</div>';
+    container.innerHTML = '<div class="no-data">📭 Aucune donnée dans la table</div>';
 }
 
 // ❌ Affichage d'erreur
@@ -364,7 +501,6 @@ function formatDate(dateValue) {
     if (!dateValue) return '';
 
     try {
-        // Si c'est un timestamp Unix (Grist utilise des timestamps)
         if (typeof dateValue === 'number') {
             const date = new Date(dateValue * 1000);
             return date.toLocaleDateString('fr-FR', {
@@ -374,7 +510,6 @@ function formatDate(dateValue) {
             });
         }
 
-        // Si c'est déjà une date
         if (dateValue instanceof Date) {
             return dateValue.toLocaleDateString('fr-FR', {
                 year: 'numeric',
@@ -383,7 +518,6 @@ function formatDate(dateValue) {
             });
         }
 
-        // Si c'est une chaîne
         const date = new Date(dateValue);
         if (!isNaN(date.getTime())) {
             return date.toLocaleDateString('fr-FR', {
@@ -399,11 +533,4 @@ function formatDate(dateValue) {
     }
 }
 
-// 🔄 Gestion du redimensionnement
-window.addEventListener('resize', () => {
-    if (isConfigured && filteredData) {
-        renderWidget(filteredData);
-    }
-});
-
-console.log('✅ Widget Grist configurable chargé et prêt');
+console.log('✅ Widget Grist professionnel chargé et prêt');
