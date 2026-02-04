@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Grist Inventaire Pro - Recherche Pièces</title>
+  <title>Grist Widget Générique</title>
   <style>
     :root { 
       --primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -11,93 +11,120 @@
       --glass-border: rgba(255, 255, 255, 0.25);
       --shadow-light: 0 8px 32px rgba(31, 38, 135, 0.15);
       --shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.25);
-      --text-primary: #ffffff;
-      --text-secondary: rgba(255,255,255,0.75);
-      --bg-gradient: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #2d2d44 100%);
     }
-    * { box-sizing: border-box; }
-    body { 
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      margin: 0; padding: 0; background: var(--bg-gradient);
-      color: var(--text-primary); min-height: 100vh; overflow-x: hidden;
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
     }
-    .search-box { 
-      position: sticky; top: 0; background: rgba(15,15,35,0.98); 
-      backdrop-filter: blur(50px) saturate(180%); padding: 28px 0; z-index: 100; 
-      border-bottom: 1px solid var(--glass-border); box-shadow: var(--shadow-light);
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
     }
-    input[type="search"] { 
-      max-width: 650px; margin: 0 auto; display: block; padding: 22px 32px; 
-      border: 2px solid var(--glass-border); border-radius: 28px; font-size: 17px; 
-      font-weight: 500; background: var(--glass-bg); box-shadow: var(--shadow-light);
-      backdrop-filter: blur(25px); color: var(--text-primary); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    input[type="search"]:focus { 
-      border-color: rgba(102,126,234,0.6); outline: none; box-shadow: 0 20px 60px rgba(102,126,234,0.35);
-      transform: translateY(-3px) scale(1.025);
-    }
-    input[type="search"]::placeholder { color: var(--text-secondary); }
-    .results-list { max-width: 850px; margin: 48px auto; padding: 0 24px; display: grid; gap: 24px; }
-    .row-item.modern { 
-      padding: 32px; border-radius: 32px; cursor: pointer; background: var(--glass-bg);
-      box-shadow: var(--shadow-light); transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      display: flex; align-items: flex-start; gap: 24px; min-height: 130px; overflow: hidden;
-      border: 1px solid var(--glass-border); position: relative; backdrop-filter: blur(30px);
-    }
-    .row-item.modern:hover { 
-      transform: translateY(-12px) scale(1.04); box-shadow: var(--shadow-hover);
-      border-color: rgba(102,126,234,0.5); background: rgba(255,255,255,0.2);
-    }
-    .row-item.modern:active { transform: translateY(-6px) scale(1.02); }
-    .author-badge { 
-      position: absolute; top: 20px; left: 24px; background: rgba(255,255,255,0.18);
-      backdrop-filter: blur(35px); border: 1px solid rgba(255,255,255,0.4); border-radius: 40px;
-      color: var(--text-primary); font-weight: 700; font-size: 14px; padding: 12px 24px;
-      box-shadow: var(--shadow-light), inset 0 1px 0 rgba(255,255,255,0.5); white-space: nowrap; 
-      z-index: 3; letter-spacing: 0.5px; text-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    .status-badge { 
-      position: absolute; top: 20px; right: 24px; padding: 12px 24px; border-radius: 36px;
-      font-size: 13px; font-weight: 700; letter-spacing: 0.4px; z-index: 3; backdrop-filter: blur(25px);
-      box-shadow: var(--shadow-light); border: 1px solid rgba(255,255,255,0.3);
-    }
-    .status-badge.valid { background: rgba(34,197,94,0.3); color: #10b981; border-color: rgba(34,197,94,0.6); }
-    .status-badge.draft { background: rgba(239,68,68,0.3); color: #ef4444; border-color: rgba(239,68,68,0.6); }
-    .content-right { flex: 1; margin-top: 40px; margin-left: 20px; }
-    .piece-title { 
-      font-weight: 900; font-size: 20px; background: var(--primary); 
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      line-height: 1.3; margin-bottom: 8px; max-height: 54px; overflow: hidden;
-      display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
-    }
-    .piece-desc { 
-      font-size: 15px; color: var(--text-secondary); line-height: 1.55; 
-      max-height: 46px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; 
-      line-clamp: 2; -webkit-box-orient: vertical;
-    }
-    .status-msg { 
-      padding: 90px 80px; text-align: center; color: var(--text-secondary); font-size: 17px; 
-      font-weight: 500; line-height: 1.8; background: var(--glass-bg); border-radius: 32px; 
-      backdrop-filter: blur(35px); margin: 80px auto; max-width: 600px; border: 1px solid var(--glass-border);
+
+    .search-box {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
       box-shadow: var(--shadow-light);
     }
-    .results-count { 
-      text-align: center; padding: 20px 32px; color: var(--text-secondary); font-size: 15px; 
-      font-weight: 600; background: var(--glass-bg); border-radius: 24px; margin-bottom: 32px; 
-      backdrop-filter: blur(25px); border: 1px solid var(--glass-border); box-shadow: var(--shadow-light);
+
+    .search-box input {
+      width: 100%;
+      padding: 12px 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 16px;
+      transition: all 0.3s;
     }
-    @media (max-width: 768px) { .results-list { padding: 0 16px; gap: 16px; } .row-item.modern { padding: 24px; min-height: 110px; } }
+
+    .search-box input:focus {
+      outline: none;
+      border-color: #fff;
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
+    }
+
+    #results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: var(--shadow-light);
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .card-image {
+      width: 100%;
+      height: 200px;
+      overflow: hidden;
+      background: #f0f0f0;
+    }
+
+    .card-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .card-content {
+      padding: 20px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 12px;
+    }
+
+    .field-row {
+      display: flex;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .field-label {
+      font-weight: 600;
+      color: #7f8c8d;
+      margin-right: 8px;
+      text-transform: capitalize;
+    }
+
+    .field-value {
+      color: #2c3e50;
+      flex: 1;
+    }
   </style>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 </head>
 <body>
-  <div class="search-box">
-    <input type="search" id="searchInput" 
-           placeholder="🔍 Recherche Nom pièce · Auteur · Catégorie (ou % pour tout afficher)" autofocus>
+  <div class="container">
+    <div class="search-box">
+      <input type="text" id="search" placeholder="🔍 Rechercher..." oninput="search()">
+    </div>
+    <div id="results"></div>
   </div>
-  <div class="results-list" id="results">
-    <div class="status-msg">🚀 Widget Inventaire Pro - Modernisation 2026</div>
-  </div>
-  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
+

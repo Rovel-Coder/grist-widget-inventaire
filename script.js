@@ -1,200 +1,279 @@
-// 🎯 Déclaration des colonnes configurables
+// 🎯 Configuration dynamique - S'adapte à toutes les tables
 grist.ready({ 
   requiredAccess: 'full', 
   allowSelectBy: true,
-  columns: [
-    {
-      name: "nomColonne",
-      title: "Nom du fichier",
-      description: "Colonne contenant le nom du fichier",
-      optional: false,
-      type: "Text"
-    },
-    {
-      name: "descriptionColonne",
-      title: "Description",
-      description: "Colonne contenant la description du fichier",
-      optional: true,
-      type: "Text"
-    },
-    {
-      name: "auteurColonne",
-      title: "Auteur",
-      description: "Colonne contenant l'auteur du fichier",
-      optional: true,
-      type: "Text"
-    },
-    {
-      name: "validationColonne",
-      title: "Validation",
-      description: "Colonne indiquant si la pièce est validée",
-      optional: true,
-      type: "Choice"
-    },
-    {
-      name: "categorieColonne",
-      title: "Catégorie",
-      description: "Colonne contenant la catégorie du fichier",
-      optional: true,
-      type: "Ref"
-    }
-  ]
+  onEditOptions: true // Active la configuration
 });
 
-let allData = []; 
+let allData = [];
 let widgetConfig = {
-  nomColonne: null,
-  descriptionColonne: null,
-  auteurColonne: null,
-  validationColonne: null,
-  categorieColonne: null
+  displayColumns: [], // Colonnes à afficher dans les cartes
+  searchColumns: [], // Colonnes utilisées pour la recherche
+  titleColumn: null, // Colonne principale (titre)
+  imageColumn: null, // Colonne d'image/attachments
+  availableColumns: [] // Métadonnées des colonnes disponibles
 };
 
-// 🎨 Écouteur pour les changements de configuration
+// 🔍 Détection automatique des colonnes disponibles
+async function detectAvailableColumns() {
+  try {
+    const tableId = await grist.getTable();
+    const tables = await grist.docApi.fetchTable(tableId);
+    
+    if (tables && tables.length > 0) {
+      // Récupérer les métadonnées des colonnes via l'API
+      const columns = Object.keys(tables[0]).filter(k => k !== 'id');
+      
+      widgetConfig.availableColumns = columns.map(colId => ({
+        id: colId,
+        label: colId.replace(/_/g, ' '), // Label lisible
+        type: inferColumnType(tables[0][colId]) // Type inféré
+      }));
+      
+      console.log("📋 Colonnes détectées:", widgetConfig.availableColumns);
+      
+      // Configuration par défaut intelligente
+      setDefaultConfig();
+    }
+  } catch (err) {
+    console.warn("⚠️ Impossible de détecter les colonnes automatiquement:", err);
+  }
+}
+
+// 🧠 Inférence du type de colonne
+function inferColumnType(sampleValue) {
+  if (Array.isArray(sampleValue)) {
+    if (sampleValue.length > 0 && typeof sampleValue[0] === 'object' && 'name' in sampleValue[0]) {
+      return 'Attachments';
+    }
+    return 'RefList';
+  }
+  if (typeof sampleValue === 'object' && sampleValue !== null) {
+    return 'Ref';
+  }
+  if (typeof sampleValue === 'number') return 'Numeric';
+  if (typeof sampleValue === 'boolean') return 'Toggle';
+  return 'Text';
+}
+
+// ⚙️ Configuration par défaut intelligente
+function setDefaultConfig() {
+  const cols = widgetConfig.availableColumns;
+  
+  // Chercher une colonne de titre (nom, title, label, etc.)
+  const titleCandidates = cols.filter(c => 
+    /nom|name|title|titre|label/i.test(c.id)
+  );
+  widgetConfig.titleColumn = titleCandidates[0]?.id || cols[0]?.id;
+  
+  // Chercher une colonne d'image
+  const imageCandidates = cols.filter(c => c.type === 'Attachments');
+  widgetConfig.imageColumn = imageCandidates[0]?.id || null;
+  
+  // Par défaut : afficher les 4 premières colonnes textuelles
+  widgetConfig.displayColumns = cols
+    .filter(c => ['Text', 'Numeric', 'Choice'].includes(c.type))
+    .slice(0, 4)
+    .map(c => c.id);
+  
+  // Recherche sur toutes les colonnes textuelles
+  widgetConfig.searchColumns = cols
+    .filter(c => ['Text', 'Choice'].includes(c.type))
+    .map(c => c.id);
+}
+
+// 🎨 Interface de configuration dans Grist
 grist.onOptions(function(options, interaction) {
   console.log("⚙️ Options reçues:", options);
-  console.log("📋 Mappings reçus:", interaction);
   
-  // Les mappings contiennent les noms de colonnes choisis par l'utilisateur
-  const mappings = interaction || {};
-  
-  widgetConfig = {
-    nomColonne: mappings.nomColonne || null,
-    descriptionColonne: mappings.descriptionColonne || null,
-    auteurColonne: mappings.auteurColonne || null,
-    validationColonne: mappings.validationColonne || null,
-    categorieColonne: mappings.categorieColonne || null
-  };
+  // Si l'utilisateur a configuré manuellement
+  if (options.titleColumn) widgetConfig.titleColumn = options.titleColumn;
+  if (options.imageColumn) widgetConfig.imageColumn = options.imageColumn;
+  if (options.displayColumns) widgetConfig.displayColumns = options.displayColumns.split(',');
+  if (options.searchColumns) widgetConfig.searchColumns = options.searchColumns.split(',');
   
   console.log("✅ Config appliquée:", widgetConfig);
-  
-  // Recharger les données avec la nouvelle config
   loadData();
 });
 
+// 📊 Parsing générique des données Grist
 function parseGristData(data) {
   if (!data) return [];
+  
   console.log("📦 Raw data reçue:", data);
+  
   if (!Array.isArray(data) && typeof data === 'object') {
-    const ids = data.id || []; 
+    const ids = data.id || [];
     const keys = Object.keys(data).filter(k => k !== 'id');
+    
     console.log("🔑 Colonnes détectées:", keys);
-    console.log("🎯 Config actuelle:", widgetConfig);
     
     return ids.map((id, index) => {
-      const f = {}; 
-      keys.forEach(k => f[k] = data[k][index]);
+      const record = {};
       
-      // Extraire la valeur de catégorie (Ref ou texte direct)
-      let categorieText = "";
-      if (widgetConfig.categorieColonne) {
-        const categorieValue = f[widgetConfig.categorieColonne];
-        if (categorieValue && typeof categorieValue === 'object' && categorieValue.length > 0) {
-          categorieText = categorieValue[0]?.toString() || "";
-        } else {
-          categorieText = (categorieValue || "").toString();
-        }
-      }
+      // Extraire toutes les valeurs
+      keys.forEach(key => {
+        record[key] = formatValue(data[key][index], key);
+      });
       
-      // Utiliser la configuration pour la recherche
-      const recherche = [
-        widgetConfig.nomColonne ? (f[widgetConfig.nomColonne] || "").toString() : "",
-        widgetConfig.auteurColonne ? (f[widgetConfig.auteurColonne] || "").toString() : "",
-        categorieText
-      ].join(' ').toLowerCase();
+      // Construire la chaîne de recherche
+      const searchString = widgetConfig.searchColumns
+        .map(col => (record[col] || '').toString())
+        .join(' ')
+        .toLowerCase();
       
-      return { id, fields: f, searchString: recherche };
+      return { 
+        id, 
+        fields: record, 
+        searchString 
+      };
     });
   }
+  
   return [];
 }
 
+// 🎨 Formattage intelligent des valeurs selon le type
+function formatValue(value, columnId) {
+  // Gestion des références (Ref)
+  if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'number') {
+    return value[0].toString(); // Ref simple
+  }
+  
+  // Gestion des attachments
+  if (Array.isArray(value) && value.length > 0 && value[0].name) {
+    return value; // Garder les attachments tels quels
+  }
+  
+  // Valeurs nulles
+  if (value === null || value === undefined) return '';
+  
+  // Valeurs simples
+  return value.toString();
+}
+
+// 🚀 Chargement des données
 async function loadData() {
   const container = document.getElementById('results');
   
-  // Vérifier qu'au moins la colonne nom est configurée
-  if (!widgetConfig.nomColonne) {
-    container.innerHTML = `<div class="status-msg">⚙️ Configurez au moins la colonne "Nom du fichier" dans le panneau de droite</div>`;
-    return;
+  // Vérifier la configuration minimale
+  if (!widgetConfig.titleColumn) {
+    await detectAvailableColumns();
   }
   
-  container.innerHTML = `<div class="status-msg">🔄 Chargement des données...</div>`;
   try {
-    grist.setSelectedRows([]);
-    const rawData = await grist.docApi.fetchTable();
-    allData = parseGristData(rawData);
-    console.log(`✅ ${allData.length} pièces chargées`);
-    if (allData.length) console.log("📋 Premier élément:", allData[0]);
-    container.innerHTML = allData.length ? 
-      `<div class="status-msg">✅ ${allData.length} pièces prêtes ! Tapez % ou recherchez</div>` :
-      `<div class="status-msg">⚠️ Table vide ou inaccessible</div>`;
-  } catch(e) {
-    console.error("💥 Erreur:", e);
-    container.innerHTML = `<div class="status-msg" style="color:#ef4444;background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);">
-      ❌ Erreur: ${e.message}<br><small>F12 Console → 🔑 Vérifiez colonnes mappées</small></div>`;
+    const data = await grist.fetchSelectedTable();
+    allData = parseGristData(data);
+    
+    console.log(`📊 ${allData.length} enregistrements chargés`);
+    renderResults(allData);
+    
+  } catch (err) {
+    console.error("❌ Erreur chargement:", err);
+    container.innerHTML = `
+      <div style="padding: 20px; text-align: center; color: #e74c3c;">
+        ❌ Erreur de chargement des données: ${err.message}
+      </div>
+    `;
   }
 }
 
-function renderResults(list, query = "") {
+// 🎨 Rendu générique des cartes
+function renderResults(data) {
   const container = document.getElementById('results');
-  const isWildcard = query === "%"; 
-  const count = list.length;
-
-  if (!isWildcard && query.length < 3) {
-    container.innerHTML = `<div class="status-msg">⌨️ Tapez ≥3 caractères (nom · auteur · catégorie)…</div>`;
-    return;
-  }
-  if (count === 0) {
-    container.innerHTML = `<div class="status-msg">❌ Aucun résultat pour "${query}"</div>`;
-    return;
-  }
-
-  container.innerHTML = `
-    <div class="results-count">📊 ${count} pièce${count>1?'s':''} trouvée${count>1?'s':''}</div>
-    ${list.slice(0, 50).map(item => {
-      const f = item.fields;
-      
-      // Utiliser la configuration pour extraire les valeurs
-      const nom = widgetConfig.nomColonne ? (f[widgetConfig.nomColonne] || "Sans nom") : "Sans nom";
-      const desc = widgetConfig.descriptionColonne ? (f[widgetConfig.descriptionColonne] || "").toString().substring(0, 140) : "";
-      const auteur = widgetConfig.auteurColonne ? (f[widgetConfig.auteurColonne] || "Anonyme") : "Anonyme";
-      const valideRaw = widgetConfig.validationColonne ? (f[widgetConfig.validationColonne] || "") : "";
-      
-      // Gérer le Choice "Validé Institution" / "Non Validé Institution"
-      const valide = valideRaw.toString().includes("Validé");
-      const statusClass = valide ? 'valid' : 'draft';
-      const statusText = valide ? '✓ Validée' : '⚠ Brouillon';
-
-      return `
-        <div class="row-item modern" onclick="selectAndFilter(${item.id})" title="${desc}\n\n👤 ${auteur}">
-          <div class="author-badge">Pièce ${auteur}</div>
-          <span class="status-badge ${statusClass}">${statusText}</span>
-          <div class="content-right">
-            <div class="piece-title">${nom}</div>
-            <div class="piece-desc">${desc}${desc.length === 140 ? '…' : ''}</div>
-          </div>
-        </div>`;
-    }).join('')}`;
-
-  container.style.minHeight = list.length ? 'auto' : '500px';
-}
-
-window.selectAndFilter = rowId => {
-  console.log(`🎯 Sélection ligne ${rowId}`);
-  grist.setCursorPos({rowId});
-  grist.setSelectedRows([rowId]);
-};
-
-document.addEventListener('DOMContentLoaded', () => {
-  const searchInput = document.getElementById('searchInput');
-  searchInput.addEventListener('input', e => {
-    const q = e.target.value.toLowerCase().trim();
-    if (q === "%") renderResults(allData, q);
-    else if (q.length >= 3) renderResults(allData.filter(i => i.searchString.includes(q)), q);
-    else { renderResults([], q); grist.setSelectedRows([]); }
-  });
   
-  // Ne pas charger automatiquement, attendre la config
-  const container = document.getElementById('results');
-  container.innerHTML = `<div class="status-msg">⚙️ Configurez les colonnes dans le panneau de droite →</div>`;
-});
+  if (data.length === 0) {
+    container.innerHTML = `
+      <div style="padding: 40px; text-align: center; opacity: 0.6;">
+        <div style="font-size: 48px; margin-bottom: 10px;">📭</div>
+        <div>Aucun enregistrement trouvé</div>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = data.map(item => {
+    const title = item.fields[widgetConfig.titleColumn] || 'Sans titre';
+    const imageUrl = getImageUrl(item.fields[widgetConfig.imageColumn]);
+    
+    // Construire les champs à afficher
+    const displayFields = widgetConfig.displayColumns
+      .filter(col => col !== widgetConfig.titleColumn) // Éviter doublon titre
+      .map(col => {
+        const value = item.fields[col];
+        if (!value || value === '') return null;
+        
+        return `
+          <div class="field-row">
+            <span class="field-label">${col.replace(/_/g, ' ')}:</span>
+            <span class="field-value">${escapeHtml(value)}</span>
+          </div>
+        `;
+      })
+      .filter(Boolean)
+      .join('');
+    
+    return `
+      <div class="card" onclick="selectRow(${item.id})">
+        ${imageUrl ? `<div class="card-image"><img src="${imageUrl}" alt="${title}"></div>` : ''}
+        <div class="card-content">
+          <h3 class="card-title">${escapeHtml(title)}</h3>
+          ${displayFields}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 🖼️ Extraction URL d'image depuis Attachments
+function getImageUrl(attachments) {
+  if (!attachments || !Array.isArray(attachments) || attachments.length === 0) {
+    return null;
+  }
+  
+  const firstAttachment = attachments[0];
+  if (firstAttachment && firstAttachment.url) {
+    return firstAttachment.url;
+  }
+  
+  return null;
+}
+
+// 🔒 Échappement HTML pour sécurité
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// 🎯 Sélection de ligne dans Grist
+async function selectRow(rowId) {
+  try {
+    await grist.setCursorPos({ rowId });
+    console.log(`✅ Ligne ${rowId} sélectionnée`);
+  } catch (err) {
+    console.error("❌ Erreur sélection:", err);
+  }
+}
+
+// 🔍 Recherche en temps réel
+function search() {
+  const query = document.getElementById('search').value.toLowerCase().trim();
+  
+  if (!query) {
+    renderResults(allData);
+    return;
+  }
+  
+  const filtered = allData.filter(item => 
+    item.searchString.includes(query)
+  );
+  
+  renderResults(filtered);
+  console.log(`🔍 ${filtered.length} résultats pour "${query}"`);
+}
+
+// 🚀 Initialisation
+grist.ready();
+detectAvailableColumns();
+loadData();
