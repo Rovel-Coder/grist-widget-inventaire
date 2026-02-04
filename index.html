@@ -23,6 +23,35 @@
             margin: 0 auto;
         }
 
+        /* Barre de recherche */
+        .search-bar {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+
+        .search-stats {
+            margin-top: 0.5rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
         .config-message {
             text-align: center;
             padding: 3rem 1rem;
@@ -133,10 +162,24 @@
             border-radius: 4px;
             margin-bottom: 1rem;
         }
+
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div id="container">
+        <div class="search-bar" id="searchBar">
+            <input 
+                type="text" 
+                id="searchInput" 
+                class="search-input" 
+                placeholder="🔍 Rechercher..."
+                autocomplete="off"
+            >
+            <div class="search-stats" id="searchStats"></div>
+        </div>
         <div id="results"></div>
     </div>
 

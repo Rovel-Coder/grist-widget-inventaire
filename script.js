@@ -1,7 +1,9 @@
 // 🎯 Configuration des colonnes pour le widget Grist
 let allData = [];
+let filteredData = [];
 let currentMappings = null;
 let isConfigured = false;
+let searchTerm = '';
 
 // 📋 Initialisation du widget avec configuration des colonnes
 grist.ready({
@@ -70,8 +72,11 @@ grist.ready({
 });
 
 // 📊 Écoute des changements de données avec mappings
-grist.onRecords(function(records, mappings) {
+grist.onRecords(async function(records, mappings) {
     try {
+        console.log('📊 Données reçues:', records);
+        console.log('🗺️ Mappings:', mappings);
+
         currentMappings = mappings;
 
         // Vérifier si la colonne obligatoire est configurée
@@ -83,27 +88,108 @@ grist.onRecords(function(records, mappings) {
 
         isConfigured = true;
 
-        // Utiliser le helper pour mapper automatiquement les colonnes
-        const mappedData = grist.mapColumnNames(records, {
+        // Récupérer les données de la table complète
+        const tableData = await grist.fetchSelectedTable();
+        console.log('📋 Données table complète:', tableData);
+
+        // Mapper les colonnes
+        const mappedData = grist.mapColumnNames(tableData, {
             mappings: mappings
         });
 
-        if (mappedData) {
+        console.log('✅ Données mappées:', mappedData);
+
+        if (mappedData && mappedData.id && mappedData.id.length > 0) {
             allData = mappedData;
-            renderWidget(mappedData);
+            applySearch();
         } else {
-            showConfigurationMessage();
+            allData = [];
+            showNoData();
         }
 
     } catch (error) {
-        console.error("Erreur lors du traitement des données:", error);
+        console.error("❌ Erreur lors du traitement des données:", error);
         showError(error.message);
     }
 });
 
+// 🔍 Barre de recherche
+const searchInput = document.getElementById('searchInput');
+const searchBar = document.getElementById('searchBar');
+
+searchInput.addEventListener('input', (e) => {
+    searchTerm = e.target.value.toLowerCase().trim();
+    applySearch();
+});
+
+// 🎯 Appliquer la recherche
+function applySearch() {
+    if (!allData || !allData.id) {
+        return;
+    }
+
+    if (!searchTerm) {
+        filteredData = allData;
+        renderWidget(allData);
+        updateSearchStats(allData.id.length, allData.id.length);
+        return;
+    }
+
+    // Filtrer les données
+    const filtered = {
+        id: [],
+        title: [],
+        description: [],
+        image: [],
+        date: [],
+        category: [],
+        status: [],
+        author: [],
+        additionalFields: []
+    };
+
+    allData.id.forEach((id, index) => {
+        // Recherche dans tous les champs textuels
+        const searchableText = [
+            allData.title?.[index],
+            allData.description?.[index],
+            allData.category?.[index],
+            allData.status?.[index],
+            allData.author?.[index]
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        if (searchableText.includes(searchTerm)) {
+            filtered.id.push(id);
+            if (allData.title) filtered.title.push(allData.title[index]);
+            if (allData.description) filtered.description.push(allData.description[index]);
+            if (allData.image) filtered.image.push(allData.image[index]);
+            if (allData.date) filtered.date.push(allData.date[index]);
+            if (allData.category) filtered.category.push(allData.category[index]);
+            if (allData.status) filtered.status.push(allData.status[index]);
+            if (allData.author) filtered.author.push(allData.author[index]);
+            if (allData.additionalFields) filtered.additionalFields.push(allData.additionalFields[index]);
+        }
+    });
+
+    filteredData = filtered;
+    renderWidget(filtered);
+    updateSearchStats(filtered.id.length, allData.id.length);
+}
+
+// 📊 Mise à jour des statistiques de recherche
+function updateSearchStats(shown, total) {
+    const statsElement = document.getElementById('searchStats');
+    if (shown === total) {
+        statsElement.textContent = `${total} résultat${total > 1 ? 's' : ''}`;
+    } else {
+        statsElement.textContent = `${shown} résultat${shown > 1 ? 's' : ''} sur ${total}`;
+    }
+}
+
 // 🎨 Fonction de rendu du widget
 function renderWidget(data) {
     const container = document.getElementById('results');
+    searchBar.classList.remove('hidden');
 
     // Vérifier si nous avons des données
     if (!data || !data.id || data.id.length === 0) {
@@ -115,13 +201,13 @@ function renderWidget(data) {
 
     // Créer une carte pour chaque ligne
     data.id.forEach((id, index) => {
-        const card = createCard(data, index);
+        const card = createCard(data, index, id);
         container.appendChild(card);
     });
 }
 
 // 🃏 Création d'une carte individuelle
-function createCard(data, index) {
+function createCard(data, index, rowId) {
     const card = document.createElement('div');
     card.className = 'card';
 
@@ -135,7 +221,8 @@ function createCard(data, index) {
     const imageData = data.image?.[index];
     let imageUrl = null;
     if (imageData && Array.isArray(imageData) && imageData.length > 0) {
-        imageUrl = imageData[0];
+        // Grist retourne les attachments sous forme de tableau d'objets ou d'URLs
+        imageUrl = typeof imageData[0] === 'string' ? imageData[0] : imageData[0]?.url;
     }
 
     // Construction du HTML
@@ -143,7 +230,7 @@ function createCard(data, index) {
 
     // Image si disponible
     if (imageUrl) {
-        cardHTML += `<img src="${imageUrl}" alt="${title}" class="card-image" onerror="this.style.display='none'">`;
+        cardHTML += `<img src="${imageUrl}" alt="${escapeHtml(title)}" class="card-image" onerror="this.style.display='none'">`;
     }
 
     cardHTML += '<div class="card-content">';
@@ -206,14 +293,16 @@ function createCard(data, index) {
 
             // Si c'est un tableau (plusieurs colonnes sélectionnées)
             if (Array.isArray(additionalData)) {
-                additionalData.forEach((value, idx) => {
+                additionalData.forEach((value) => {
                     if (value !== null && value !== undefined && value !== '') {
                         cardHTML += `<div class="field-item">• ${escapeHtml(String(value))}</div>`;
                     }
                 });
             } else {
                 // Sinon afficher la valeur unique
-                cardHTML += `<div class="field-item">${escapeHtml(String(additionalData))}</div>`;
+                if (additionalData !== null && additionalData !== undefined && additionalData !== '') {
+                    cardHTML += `<div class="field-item">${escapeHtml(String(additionalData))}</div>`;
+                }
             }
 
             cardHTML += '</div>';
@@ -226,7 +315,7 @@ function createCard(data, index) {
     // Permettre la sélection de la ligne dans Grist au clic
     card.style.cursor = 'pointer';
     card.addEventListener('click', () => {
-        grist.setCursorPos({rowId: id}).catch(console.error);
+        grist.setCursorPos({rowId: rowId}).catch(err => console.error('Erreur setCursorPos:', err));
     });
 
     return card;
@@ -234,6 +323,7 @@ function createCard(data, index) {
 
 // 📝 Message de configuration
 function showConfigurationMessage() {
+    searchBar.classList.add('hidden');
     const container = document.getElementById('results');
     container.innerHTML = `
         <div class="config-message">
@@ -244,8 +334,16 @@ function showConfigurationMessage() {
     `;
 }
 
+// 📭 Message aucune donnée
+function showNoData() {
+    searchBar.classList.add('hidden');
+    const container = document.getElementById('results');
+    container.innerHTML = '<div class="no-data">Aucune donnée dans la table</div>';
+}
+
 // ❌ Affichage d'erreur
 function showError(message) {
+    searchBar.classList.add('hidden');
     const container = document.getElementById('results');
     container.innerHTML = `
         <div class="error-message">
@@ -266,7 +364,7 @@ function formatDate(dateValue) {
     if (!dateValue) return '';
 
     try {
-        // Si c'est un timestamp
+        // Si c'est un timestamp Unix (Grist utilise des timestamps)
         if (typeof dateValue === 'number') {
             const date = new Date(dateValue * 1000);
             return date.toLocaleDateString('fr-FR', {
@@ -303,9 +401,9 @@ function formatDate(dateValue) {
 
 // 🔄 Gestion du redimensionnement
 window.addEventListener('resize', () => {
-    if (isConfigured && allData) {
-        renderWidget(allData);
+    if (isConfigured && filteredData) {
+        renderWidget(filteredData);
     }
 });
 
-console.log('✅ Widget Grist configurable chargé');
+console.log('✅ Widget Grist configurable chargé et prêt');
