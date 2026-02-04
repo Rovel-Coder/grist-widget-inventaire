@@ -1,6 +1,6 @@
 // 🎯 Configuration manuelle des colonnes via l'interface Grist
-grist.ready({ 
-  requiredAccess: 'full', 
+grist.ready({
+  requiredAccess: 'full',
   allowSelectBy: true,
   columns: [
     {
@@ -33,7 +33,11 @@ grist.ready({
       optional: true,
       allowMultiple: true
     }
-  ]
+  ],
+  // ✅ CORRECTION : Utilisation de onRecords pour gérer les mises à jour sans erreur
+  onRecords: function() {
+    loadData();
+  }
 });
 
 let allData = [];
@@ -113,10 +117,10 @@ function parseGristData(data) {
 
       const searchString = searchParts.join(' ').toLowerCase();
 
-      return { 
-        id, 
-        fields: record, 
-        searchString 
+      return {
+        id,
+        fields: record,
+        searchString
       };
     });
   }
@@ -310,7 +314,7 @@ function search() {
     return;
   }
 
-  const filtered = allData.filter(item => 
+  const filtered = allData.filter(item =>
     item.searchString.includes(query)
   );
 
@@ -319,12 +323,7 @@ function search() {
   console.log(`🔍 ${filtered.length} résultats pour "${query}"`);
 }
 
-// 🚀 Initialisation au chargement
-grist.on('message', (e) => {
-  if (e.tableId) {
-    loadData();
-  }
-});
-
-// Premier chargement
+// Initialisation au chargement
+// Note: onRecords dans grist.ready gère désormais les mises à jour,
+// mais nous appelons loadData() une première fois pour l'initialisation immédiate.
 loadData();
