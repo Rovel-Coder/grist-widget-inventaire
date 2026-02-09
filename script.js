@@ -6,6 +6,8 @@ let isConfigured = false;
 let searchTerm = '';
 let statusColors = {};
 let allColumns = {};
+let searchInput;
+let searchBar;
 
 // 📋 Initialisation du widget avec configuration des colonnes
 grist.ready({
@@ -79,11 +81,40 @@ grist.ready({
   ]
 });
 
+// 🔍 Initialiser la barre de recherche après le chargement du DOM
+function initSearchBar() {
+  searchInput = document.getElementById('searchInput');
+  searchBar = document.getElementById('searchBar');
+  
+  if (!searchInput) {
+    console.error('❌ Élément searchInput introuvable');
+    return;
+  }
+  
+  searchInput.addEventListener('input', (e) => {
+    searchTerm = e.target.value.toLowerCase().trim();
+    console.log('🔍 Recherche:', searchTerm);
+    
+    if (searchTerm.length > 0) {
+      applySearch();
+    } else {
+      showSearchPrompt();
+    }
+  });
+  
+  console.log('✅ Barre de recherche initialisée');
+}
+
 // 📊 Écoute des changements de données avec mappings
 grist.onRecords(async function(records, mappings) {
   try {
     console.log('📊 Données reçues:', records);
     console.log('🗺️ Mappings:', mappings);
+    
+    // Initialiser la barre de recherche si pas encore fait
+    if (!searchInput) {
+      initSearchBar();
+    }
     
     currentMappings = mappings;
     
@@ -163,21 +194,6 @@ async function fetchStatusColors(mappings) {
   }
 }
 
-// 🔍 Barre de recherche
-const searchInput = document.getElementById('searchInput');
-const searchBar = document.getElementById('searchBar');
-
-searchInput.addEventListener('input', (e) => {
-  searchTerm = e.target.value.toLowerCase().trim();
-  console.log('🔍 Recherche:', searchTerm);
-  
-  if (searchTerm.length > 0) {
-    applySearch();
-  } else {
-    showSearchPrompt();
-  }
-});
-
 // 🎯 Appliquer la recherche
 function applySearch() {
   if (!allData || !allData.id || allData.id.length === 0) {
@@ -242,6 +258,8 @@ function applySearch() {
 // 📊 Mise à jour des statistiques de recherche
 function updateSearchStats(shown, total) {
   const statsElement = document.getElementById('searchStats');
+  if (!statsElement) return;
+  
   if (shown === total) {
     statsElement.textContent = `✨ ${total} produit${total > 1 ? 's' : ''} trouvé${total > 1 ? 's' : ''}`;
   } else {
@@ -251,13 +269,15 @@ function updateSearchStats(shown, total) {
 
 // 💬 Message de recherche initial
 function showSearchPrompt() {
-  searchBar.classList.remove('hidden');
+  if (searchBar) searchBar.classList.remove('hidden');
   const container = document.getElementById('results');
+  if (!container) return;
+  
   const statsElement = document.getElementById('searchStats');
   
-  if (allData && allData.id) {
+  if (allData && allData.id && statsElement) {
     statsElement.textContent = `${allData.id.length} produit${allData.id.length > 1 ? 's' : ''} disponible${allData.id.length > 1 ? 's' : ''}`;
-  } else {
+  } else if (statsElement) {
     statsElement.textContent = '';
   }
   
@@ -272,7 +292,9 @@ function showSearchPrompt() {
 // 🎨 Rendu du widget avec cartes
 function renderWidget(data) {
   const container = document.getElementById('results');
-  searchBar.classList.remove('hidden');
+  if (!container) return;
+  
+  if (searchBar) searchBar.classList.remove('hidden');
   
   if (!data || !data.id || data.id.length === 0) {
     container.innerHTML = `
@@ -430,6 +452,8 @@ function formatDate(timestamp) {
 function openModal(data, index, rowId) {
   const modal = document.getElementById('detailModal');
   const modalContent = document.getElementById('modalContent');
+  
+  if (!modal || !modalContent) return;
   
   modalContent.innerHTML = '';
   
@@ -595,23 +619,32 @@ function formatFieldValue(value) {
 }
 
 // ❌ Fermer la modale
-const modal = document.getElementById('detailModal');
-const closeBtn = document.querySelector('.close-modal');
-
-closeBtn.onclick = () => {
-  modal.classList.remove('show');
-};
-
-window.onclick = (event) => {
-  if (event.target === modal) {
+function initModal() {
+  const modal = document.getElementById('detailModal');
+  const closeBtn = document.querySelector('.close-modal');
+  
+  if (!modal || !closeBtn) return;
+  
+  closeBtn.onclick = () => {
     modal.classList.remove('show');
-  }
-};
+  };
+  
+  window.onclick = (event) => {
+    if (event.target === modal) {
+      modal.classList.remove('show');
+    }
+  };
+}
+
+// Initialiser la modale
+setTimeout(initModal, 100);
 
 // 📭 Pas de données
 function showNoData() {
-  searchBar.classList.add('hidden');
+  if (searchBar) searchBar.classList.add('hidden');
   const container = document.getElementById('results');
+  if (!container) return;
+  
   container.innerHTML = `
     <div class="empty-state">
       <div class="search-icon">📭</div>
@@ -623,8 +656,10 @@ function showNoData() {
 
 // ⚙️ Message de configuration
 function showConfigurationMessage() {
-  searchBar.classList.add('hidden');
+  if (searchBar) searchBar.classList.add('hidden');
   const container = document.getElementById('results');
+  if (!container) return;
+  
   container.innerHTML = `
     <div class="empty-state">
       <div class="search-icon">⚙️</div>
@@ -637,8 +672,10 @@ function showConfigurationMessage() {
 
 // ⚠️ Message d'erreur
 function showError(message) {
-  searchBar.classList.add('hidden');
+  if (searchBar) searchBar.classList.add('hidden');
   const container = document.getElementById('results');
+  if (!container) return;
+  
   container.innerHTML = `
     <div class="empty-state error">
       <div class="search-icon">⚠️</div>
